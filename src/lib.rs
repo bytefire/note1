@@ -31,6 +31,7 @@ pub const HTTP_BAD_REQUEST : u32 = 400;
 pub const HTTP_NOT_FOUND : u32 = 404;
 pub const HTTP_CONFLICT : u32 = 409;
 pub const HTTP_INTERNAL_SERVER_ERROR : u32 = 500;
+pub const HTTP_INSUFFICIENT_STORAGE : u32 = 507;
 
 struct TagRec {
     tag : [u8;248],
@@ -75,7 +76,7 @@ impl Metadata {
 
         // inflate the vectors
         for _i in 0..md.max_records {
-            md.tags.push(TagRec { tag: [0; 248], flags: 0x1 });
+            md.tags.push(TagRec { tag: [0; 248], flags: 0x0 });
             md.values.push([0; 256]);
         }
 
@@ -100,6 +101,8 @@ impl Metadata {
         for val in &self.values {
             f.write_all(val).unwrap();
         }
+
+        // TODO: for security, after writing to file, clear md from memory
     }
 
     // path must be validated to exist before
@@ -113,12 +116,18 @@ impl Metadata {
         // ones. an optimization could be to read only the used tags and
         // values. with 100 max records, it doesn't matter much at the moment.
         for i in 0..md.max_records as usize {
+            // FIXME: read_exact sometimes fails with:
+            // thread 'tests::test_max_records' panicked at src/lib.rs:125:45:
+            // called `Result::unwrap()` on an `Err` value: Error { kind: UnexpectedEof, message: "failed to fill whole buffer" }
             f.read_exact(&mut md.tags[i].tag).unwrap();
             md.tags[i].flags = f.read_u64::<LittleEndian>().unwrap();
         }
 
         // read values
         for i in 0..md.max_records as usize {
+            // FIXME: read_exact sometimes fails with:
+            // thread 'tests::test_max_records' panicked at src/lib.rs:125:45:
+            // called `Result::unwrap()` on an `Err` value: Error { kind: UnexpectedEof, message: "failed to fill whole buffer" }
             f.read_exact(&mut md.values[i]).unwrap();
         }
 
@@ -214,6 +223,10 @@ pub fn post(path : &str, tag : &str, value : &str) -> u32 {
     }
 
     // TODO: check for number of available records and if not available then increase max_records.
+    if md.record_count == md.max_records {
+        eprintln!("[-] Failed to insert new record. Max records ({}) reached.", MAX_RECORDS);
+        return HTTP_INSUFFICIENT_STORAGE;
+    }
 
     let mut first_empty_index = usize::MAX;
     // this loop searches for empty index and for a matching record. ideally
@@ -338,18 +351,93 @@ mod tests {
 
         let md = Metadata::read_from_file(Path::new("note1.file"));
 
-        assert_eq!(md.max_records, 100);
+        assert_eq!(md.max_records, MAX_RECORDS);
         assert_eq!(md.record_count, 1);
         assert_eq!(cstring_to_str(&md.tags[0].tag), "yahoo.com");
         assert_eq!(md.tags[0].flags, 0x1);
         assert_eq!(cstring_to_str(&md.values[0]), "u: abcd p: 1234");
     }
 
-    // TODO: add test:
-    //  1. to check for duplicate record
-    //  2. delete record and get it afterward to see http 404
-    //  3. to check get: post a record, get it, get a record you didn't post
-    //  4. add test to check that record count gets updated
-    //  5. add test which maxes out number of records and adds more. expect correct error.
+    #[test]
+    fn test_duplicate_records() {
+        fs::remove_file("note1.file").ok();
+        let ret1 = post("note1.file", "yahoo.com", "u: abcd p: 1234");
+        assert_eq!(ret1, HTTP_OK);
 
+        let ret2 = post("note1.file", "yahoo.com", "u: second_user p: second_password");
+        assert_eq!(ret2, HTTP_CONFLICT);
+
+        let md = Metadata::read_from_file(Path::new("note1.file"));
+
+        assert_eq!(md.record_count, 1);
+        assert_eq!(md.index_of_matching_tag("yahoo.com").unwrap(), 0);
+        assert_eq!(md.fname, "note1.file");
+        assert_eq!(md.tags[0].is_empty(), false);
+        assert_eq!(md.tags[0].flags, 1);
+        assert_eq!(cstring_to_str(&md.tags[0].tag), "yahoo.com");
+        assert_eq!(cstring_to_str(&md.values[0]), "u: abcd p: 1234");
+
+        let val = get("note1.file", "yahoo.com");
+        assert!(val.is_ok());
+        assert_eq!(val.unwrap(), "u: abcd p: 1234");
+
+        for (i, tag) in (&md.tags[1..]).iter().enumerate() {
+            assert_eq!(tag.is_empty(), true);
+            assert_eq!(tag.flags, 0);
+            assert_eq!(tag.tag, [0; 248]);
+            assert_eq!(md.values[i + 1], [0; 256]);
+        }
+
+    }
+
+    #[test]
+    fn test_delete_record() {
+        fs::remove_file("note1.file").ok();
+        let ret = post("note1.file", "yahoo.com", "u: abcd p: 1234");
+        assert_eq!(ret, HTTP_OK);
+
+        let ret = delete("note1.file", "yahoo.com1");
+        assert_eq!(ret, HTTP_NOT_FOUND);
+
+        let ret = get("note1.file", "yahoo.com");
+        assert!(ret.is_ok_and(|v| v == "u: abcd p: 1234"));
+
+        let ret = delete("note1.file", "yahoo.com");
+        assert_eq!(ret, HTTP_OK);
+
+        let ret = get("note1.file", "yahoo.com");
+        assert!(ret.is_err());
+        assert_eq!(ret.unwrap_err(), HTTP_NOT_FOUND);
+    }
+
+    #[test]
+    fn test_record_count() {
+        fs::remove_file("note1.file").ok();
+
+        let ret = post("note1.file", "yahoo.com", "u: abcd p: 1234");
+        assert_eq!(ret, HTTP_OK);
+
+        let md = Metadata::read_from_file(Path::new("note1.file"));
+        assert_eq!(md.record_count, 1);
+        assert_eq!(md.max_records, MAX_RECORDS);
+    }
+
+    #[test]
+    fn test_max_records() {
+        fs::remove_file("note1.file").ok();
+
+        for i in 0..MAX_RECORDS {
+            let ret = post("note1.file", format!("key{}", i).as_str(), format!("value{}", i).as_str());
+            assert_eq!(ret, HTTP_OK);
+        }
+
+        let ret = post("note1.file", "key_more", "value_more");
+        assert_eq!(ret, HTTP_INSUFFICIENT_STORAGE);
+
+        let ret = delete("note1.file", "key3");
+        assert_eq!(ret, HTTP_OK);
+
+        let ret = post("note1.file", "key_more", "value_more");
+        assert_eq!(ret, HTTP_OK);
+    }
 }
