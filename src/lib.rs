@@ -21,6 +21,7 @@ struct TagRec {
     tag : [u8;248],
     flags : u64,
 }
+
 struct Metadata {
     fname : String,
     max_records : u32,
@@ -88,6 +89,11 @@ impl Metadata {
 
         md
     }
+}
+
+fn cstring_to_str(bytes : &[u8]) -> &str {
+    let first_index_of_null = bytes.iter().position(|&c| c == b'\0').unwrap_or(bytes.len());
+    std::str::from_utf8(&bytes[0..first_index_of_null]).expect("cstring not a valid string!")
 }
 
 fn init_note1(path : &Path) -> Metadata {
@@ -165,7 +171,7 @@ pub fn post(path : &str, tag : &str, value : &str) {
             continue;
         }
 
-        if tag == std::str::from_utf8(&t.tag).expect("tag not a valid string!") {
+        if tag == cstring_to_str(&t.tag) {
             eprintln!("Tag '{}' already exists", &tag);
             return;
         }
@@ -235,11 +241,9 @@ mod tests {
 
         assert_eq!(md.max_records, 100);
         assert_eq!(md.record_count, 1);
-        let first_null_index = md.tags[0].tag.iter().position(|&c| c == b'\0').unwrap_or(md.tags.len());
-        assert_eq!(std::str::from_utf8(&md.tags[0].tag[0..first_null_index]).unwrap(), "yahoo.com");
+        assert_eq!(cstring_to_str(&md.tags[0].tag), "yahoo.com");
         assert_eq!(md.tags[0].flags, 0x1);
-        let first_null_index = md.values[0].iter().position(|&c| c == b'\0').unwrap_or(md.values[0].len());
-        assert_eq!(std::str::from_utf8(&md.values[0][0..first_null_index]).unwrap(), "u: abcd p: 1234");
+        assert_eq!(cstring_to_str(&md.values[0]), "u: abcd p: 1234");
     }
 
 
