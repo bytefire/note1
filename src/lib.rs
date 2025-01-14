@@ -1,4 +1,6 @@
-use std::{path::Path, usize};
+use std::{fs::File, io::{Seek, Write}, path::Path, usize};
+
+use byteorder::{LittleEndian, WriteBytesExt};
 
 // note1.file format is simple but open to evolve as and when need arises.
 // the format is based on concept of "record". a record is a (tag, value) pair.
@@ -20,6 +22,7 @@ struct TagRec {
     flags : u64,
 }
 struct Metadata {
+    fname : String,
     record_count : u32,
     max_records : u32,
     tags : Vec<TagRec>,
@@ -27,37 +30,64 @@ struct Metadata {
 }
 
 impl Metadata {
-    fn new(rec_count : u32, max_recs : u32) -> Self {
+    fn new(filename : &str, rec_count : u32, max_recs : u32) -> Self {
         Metadata {
+            fname : String::from(filename),
             record_count : rec_count,
             max_records : max_recs,
             tags : Vec::with_capacity(max_recs as usize),
             values : Vec::with_capacity(max_recs as usize),
         }
     }
+
+    fn write_to_file(&mut self) {
+        // overwrite the file every time. if there is a need, we can consider
+        // editing it instead of overwriting it.
+        // TODO: use BufWriter for efficiency and wrap Cursor around BufWriter
+        let mut f = File::create(&self.fname).unwrap();
+
+        f.write_u32::<LittleEndian>(self.max_records).unwrap();
+        f.write_u32::<LittleEndian>(self.record_count).unwrap();
+        for tag in &self.tags {
+            f.write_all(&tag.tag).unwrap();
+            f.write_u64::<LittleEndian>(tag.flags).unwrap();
+        }
+
+        for val in &self.values {
+            f.write_all(val).unwrap();
+        }
+    }
 }
 
-// TODO: implement this properly
 fn init_note1(path : &Path) -> Metadata {
-    // TODO: print for testing only
     println!("[+] File {} doesn't exist so creating and initializing it", path.display());
     let check = path.try_exists();
     assert!(check.is_ok());
     assert!(!check.ok().unwrap());
 
-    Metadata::new(0, 100)
+    let mut md = Metadata::new(path.to_str().unwrap(), 0, 100);
+    for _i in 0..md.max_records {
+        md.tags.push(TagRec { tag: [0; 248], flags: 0x1 });
+        md.values.push([0; 256]);
+    }
+
+    md
 }
 
 // TODO: implement this properly
 // To parse file: https://users.rust-lang.org/t/reading-binary-data-to-structs/109431/3
 fn open_note1(path : &Path) -> Metadata {
-    // TODO: print for testing only
     println!("[+] File {} already exist so just opening it", path.display());
     let check = path.try_exists();
     assert!(check.is_ok());
     assert!(check.ok().unwrap());
 
-    Metadata::new(20, 100)
+    Metadata::new(path.to_str().unwrap(), 20, 100)
+}
+
+fn transform(mut target : &mut [u8], source : &str) {
+    // TODO: encrypt using ChaCha Poly here
+    target.write_all(source.as_bytes()).unwrap();
 }
 
 pub fn post(path : &str, tag : &str, value : &str) {
@@ -115,5 +145,62 @@ pub fn post(path : &str, tag : &str, value : &str) {
     }
 
     // here means the tag doesn't exist so let's add it at index `first_empty_index`
+    let mut tr = TagRec {
+        tag : [0; 248],
+        flags : 0x1,
+    };
+
+    let mut bref : &mut[u8] = &mut tr.tag;
+    bref.write_all(tag.as_bytes()).unwrap();
+    // when we initialize metadata struct from note1.file, we make sure that
+    // all the 100 slots in the tags and values vectors are filled.
+    md.tags[first_empty_index] = tr;
+
+    transform(&mut md.values[first_empty_index], value);
+
+    md.record_count += 1;
+
+    md.write_to_file();
+
+}
+
+#[cfg(test)]
+mod tests {
+    use byteorder::{LittleEndian, WriteBytesExt};
+
+    use super::*;
+
+    struct Data {
+        count1 : u32,
+        count2 : u32,
+        list1 : [u8; 32],
+        list2 : [u8; 32],
+    }
+
+    #[test]
+    fn test_binary_serialization() {
+        let mut d = Data {
+            count1 : 0xabcdef12,
+            count2 : 0x12345678,
+            list1 : [0xa5; 32],
+            list2 : [0xb6; 32],
+
+        };
+
+        d.list1[31] = 0;
+        d.list1[30] = 1;
+
+        let mut f = File::create("test1.file").unwrap();
+        f.write_u32::<LittleEndian>(d.count1).unwrap();
+        f.write_u32::<LittleEndian>(d.count2).unwrap();
+        f.write_all(&d.list1).unwrap();
+
+    }
+
+    #[test]
+    fn test_post() {
+        post("note1.file", "yahoo.com", "u: abcd p: 1234");
+    }
+
 
 }
