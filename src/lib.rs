@@ -88,6 +88,7 @@ impl Metadata {
         // TODO: use BufWriter for efficiency and wrap Cursor around BufWriter
         let mut f = File::create(&self.fname).unwrap();
 
+        // TODO: transform {max_records, record_count, tags}
         f.write_u32::<LittleEndian>(self.max_records).unwrap();
         f.write_u32::<LittleEndian>(self.record_count).unwrap();
         for tag in &self.tags {
@@ -95,6 +96,7 @@ impl Metadata {
             f.write_u64::<LittleEndian>(tag.flags).unwrap();
         }
 
+        // values must be transformed separately when they are read and written to
         for val in &self.values {
             f.write_all(val).unwrap();
         }
@@ -121,6 +123,27 @@ impl Metadata {
         }
 
         md
+    }
+
+    fn index_of_matching_tag(&self, tag : &str) -> Option<usize> {
+        for (index, t) in self.tags.iter().enumerate() {
+            // skip empty records.
+            if t.is_empty() {
+                continue;
+            }
+
+            if tag ==  cstring_to_str(&t.tag) {
+                return Some(index);
+            }
+        }
+
+        None
+    }
+
+    fn delete_index(&mut self, index : usize) {
+        self.tags[index].set_is_empty(true);
+        self.tags[index].tag.fill(0);
+        self.values[index].fill(0);
     }
 }
 
@@ -153,18 +176,13 @@ pub fn get(path : &str, tag : &str) -> Result<String, u32> {
     }
 
     // here means md has been initialized. search for matching tag.
-    for (index, t) in md.tags.iter().enumerate() {
-        // skip empty records.
-        if t.is_empty() {
-            continue;
-        }
-        if tag ==  cstring_to_str(&t.tag) {
-            return Ok(String::from(cstring_to_str(&md.values[index])));
+    return match md.index_of_matching_tag(tag) {
+        Some(index) =>  {Ok(String::from(cstring_to_str(&md.values[index]))) },
+        None => {
+            eprintln!("[-] Failed to find the tag '{}'", tag);
+            Err(HTTP_NOT_FOUND)
         }
     }
-    // here means we didn't find the tag
-    eprintln!("[-] Failed to find the tag '{}'", tag);
-    Err(HTTP_NOT_FOUND)
 }
 
 pub fn post(path : &str, tag : &str, value : &str) -> u32 {
@@ -195,7 +213,14 @@ pub fn post(path : &str, tag : &str, value : &str) -> u32 {
     }
 
     // TODO: check for number of available records and if not available then increase max_records.
+
     let mut first_empty_index = usize::MAX;
+    // this loop searches for empty index and for a matching record. ideally
+    // code outside Metadata object should not know about it's internal
+    // workings and use something like md.index_of_matching_tag() but that
+    // method won't directly work here so we are leaking internals in the
+    // following loop. let's tidy this up later when we have a good idea about
+    // addressing this problem.
     for (i, t) in (&md.tags).iter().enumerate() {
         // check whether tag is empty and if so, skip that tag
         if t.is_empty() {
@@ -236,6 +261,42 @@ pub fn post(path : &str, tag : &str, value : &str) -> u32 {
 
 }
 
+pub fn delete(path : &str, tag : &str) -> u32 {
+    let path = Path::new(path);
+    let mut md;
+
+    match path.try_exists() {
+        Ok(exists) => {
+            if exists {
+                md = Metadata::read_from_file(path);
+            } else {
+                eprintln!("File {} doesn't exist!", path.to_str().unwrap());
+                return HTTP_NOT_FOUND;
+            }
+        },
+        Err(e) => {
+            eprintln!("[!] Failed to open file {}: {}", path.to_str().unwrap(), e);
+            return HTTP_INTERNAL_SERVER_ERROR;
+        }
+    }
+
+    // here means md is valid
+    let index;
+    match md.index_of_matching_tag(tag) {
+        Some(i) => index = i,
+        None => {
+            eprintln!("[-] Tag '{}' doesn't exist.", tag);
+            return HTTP_NOT_FOUND;
+        }
+    }
+
+    // here means we found valid tag, so delete it now
+    md.delete_index(index);
+    md.write_to_file();
+
+    HTTP_OK
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -248,7 +309,6 @@ mod tests {
         count1 : u32,
         count2 : u32,
         list1 : [u8; 32],
-        list2 : [u8; 32],
     }
 
     #[test]
@@ -257,7 +317,6 @@ mod tests {
             count1 : 0xabcdef12,
             count2 : 0x12345678,
             list1 : [0xa5; 32],
-            list2 : [0xb6; 32],
 
         };
 
@@ -285,6 +344,9 @@ mod tests {
         assert_eq!(cstring_to_str(&md.values[0]), "u: abcd p: 1234");
     }
 
-    // TODO: add test to check for duplicate record
+    // TODO: add test:
+    //  1. to check for duplicate record
+    //  2. delete record and get it afterward to see http 404
+    //  3. to check get: post a record, get it, get a record you didn't post
 
 }
