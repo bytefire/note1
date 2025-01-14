@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{path::Path, usize};
 
 // note1.file format is simple but open to evolve as and when need arises.
 // the format is based on concept of "record". a record is a (tag, value) pair.
@@ -14,13 +14,27 @@ use std::path::Path;
 //      each value corresponds, in relative order, to the tag in the list of tags above. e.g. the value at values[i]
 //          corresponds to the tag at tags[i].
 //      each value is encrypted using a different key.
+
+struct TagRec {
+    tag : [u8;248],
+    flags : u64,
+}
 struct Metadata {
     record_count : u32,
     max_records : u32,
+    tags : Vec<TagRec>,
+    values : Vec<[u8;256]>,
 }
 
 impl Metadata {
-    
+    fn new(rec_count : u32, max_recs : u32) -> Self {
+        Metadata {
+            record_count : rec_count,
+            max_records : max_recs,
+            tags : Vec::with_capacity(max_recs as usize),
+            values : Vec::with_capacity(max_recs as usize),
+        }
+    }
 }
 
 // TODO: implement this properly
@@ -31,13 +45,11 @@ fn init_note1(path : &Path) -> Metadata {
     assert!(check.is_ok());
     assert!(!check.ok().unwrap());
 
-    Metadata {
-        record_count : 0,
-        max_records : 100,
-    }
+    Metadata::new(0, 100)
 }
 
 // TODO: implement this properly
+// To parse file: https://users.rust-lang.org/t/reading-binary-data-to-structs/109431/3
 fn open_note1(path : &Path) -> Metadata {
     // TODO: print for testing only
     println!("[+] File {} already exist so just opening it", path.display());
@@ -45,10 +57,7 @@ fn open_note1(path : &Path) -> Metadata {
     assert!(check.is_ok());
     assert!(check.ok().unwrap());
 
-    Metadata {
-        record_count : 20,
-        max_records : 100,
-    }
+    Metadata::new(20, 100)
 }
 
 pub fn post(path : &str, tag : &str, value : &str) {
@@ -86,5 +95,25 @@ pub fn post(path : &str, tag : &str, value : &str) {
             return;
         }
     }
+
+    // TODO: check for number of available records and if not available then increase max_records.
+    let mut first_empty_index = usize::MAX;
+    for (i, t) in (&md.tags).iter().enumerate() {
+        // check for is_empty and if so, skip that tag
+        if t.flags & 0x1 == 0x1 {
+            if first_empty_index == usize::MAX {
+                first_empty_index = i;
+            }
+
+            continue;
+        }
+
+        if tag == std::str::from_utf8(&t.tag).expect("tag not a valid string!") {
+            eprintln!("Tag '{}' already exists", &tag);
+            return;
+        }
+    }
+
+    // here means the tag doesn't exist so let's add it at index `first_empty_index`
 
 }
