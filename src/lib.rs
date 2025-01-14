@@ -142,6 +142,7 @@ impl Metadata {
 
     fn delete_index(&mut self, index : usize) {
         self.tags[index].set_is_empty(true);
+        self.record_count -= 1;
         self.tags[index].tag.fill(0);
         self.values[index].fill(0);
     }
@@ -348,5 +349,7 @@ mod tests {
     //  1. to check for duplicate record
     //  2. delete record and get it afterward to see http 404
     //  3. to check get: post a record, get it, get a record you didn't post
+    //  4. add test to check that record count gets updated
+    //  5. add test which maxes out number of records and adds more. expect correct error.
 
 }
