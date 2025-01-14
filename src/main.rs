@@ -38,7 +38,7 @@ fn main() {
     let cli = Cli::parse();
     match cli.cmd {
         Commands::Get {tag} => println!("GET /{}", tag),
-        Commands::Post { tag, value } => post("/sbin/note1.file", &tag, &value),
+        Commands::Post { tag, value } => { post("./note1.file", &tag, &value); },
         Commands::Put { tag, value } => println!("PUT /{}\n{}", tag, value),
         Commands::Delete { tag } => println!("DELETE /{}", tag),
     }

@@ -19,6 +19,17 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 const MAX_RECORDS : u32 = 100;
 
+// HTTP codes that we return
+// TODO: find a way to group these codes under a type. something like C++ enum.
+// http crate has HttpStatus but don't want to include whole crate just for
+// status codes.
+pub const HTTP_OK : u32 = 200;
+pub const HTTP_CREATED : u32 = 201;
+pub const HTTP_BAD_REQUEST : u32 = 400;
+pub const HTTP_NOT_FOUND : u32 = 404;
+pub const HTTP_CONFLICT : u32 = 409;
+pub const HTTP_INTERNAL_SERVER_ERROR : u32 = 500;
+
 struct TagRec {
     tag : [u8;248],
     flags : u64,
@@ -103,15 +114,37 @@ fn transform(mut target : &mut [u8], source : &str) {
     target.write_all(source.as_bytes()).unwrap();
 }
 
-pub fn post(path : &str, tag : &str, value : &str) {
+// next: define http codes and return that accordingly
+pub fn get(path : &str, _tag : &str) -> Result<String, u32> {
+    let path = Path::new(path);
+    let _md;
+    match path.try_exists() {
+        Ok(exists) => {
+            if exists {
+                _md = Metadata::read_from_file(path);
+            } else {
+                eprintln!("File {} doesn't exist!", path.to_str().unwrap());
+                return Err(HTTP_NOT_FOUND);
+            }
+        },
+        Err(e) => {
+            eprintln!("Failed to open or create the backing file {}: {}", path.display(), e);
+            return Err(HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+    // TODO: temporarily here to shut up linter
+    Ok(String::new())
+}
+
+pub fn post(path : &str, tag : &str, value : &str) -> u32 {
     if !tag.is_ascii() || !value.is_ascii() {
         eprintln!("<TAG> and <VALUE> both must consist of ASCII characters only");
-        return;
+        return HTTP_BAD_REQUEST;
     }
 
     if tag.len() > 248 || value.len() > 256 {
         eprintln!("<TAG> must not be more than 248 <VALUE> must not be more than 256 ASCII characters long");
-        return;
+        return HTTP_BAD_REQUEST;
     }
 
     let mut md;
@@ -126,7 +159,7 @@ pub fn post(path : &str, tag : &str, value : &str) {
         },
         Err(e) => {
             eprintln!("Failed to open or create the backing file {}: {}", path.display(), e);
-            return;
+            return HTTP_INTERNAL_SERVER_ERROR;
         }
     }
 
@@ -144,7 +177,7 @@ pub fn post(path : &str, tag : &str, value : &str) {
 
         if tag == cstring_to_str(&t.tag) {
             eprintln!("Tag '{}' already exists", &tag);
-            return;
+            return HTTP_CONFLICT;
         }
     }
 
@@ -165,6 +198,8 @@ pub fn post(path : &str, tag : &str, value : &str) {
     md.record_count += 1;
 
     md.write_to_file();
+
+    HTTP_OK
 
 }
 
