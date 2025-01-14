@@ -1,0 +1,10 @@
+A very hacky personal project to play around with.
+
+It has a CLI which allows users to store, view and edit key-value pairs. The
+CLI wraps lib.rs which exposes HTTP verbs get, post, put and delete to operate
+on the key-value pairs.
+
+Key-value pairs can undergo a transform operation before being saved to file
+and after being loaded from file. Depending upon transform, there can be
+different applications. E.g. if transform is encryption then note1 can be used
+as a password store.
