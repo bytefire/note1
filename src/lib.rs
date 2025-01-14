@@ -17,6 +17,8 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 //          corresponds to the tag at tags[i].
 //      each value is encrypted using a different key.
 
+const MAX_RECORDS : u32 = 100;
+
 struct TagRec {
     tag : [u8;248],
     flags : u64,
@@ -31,13 +33,13 @@ struct Metadata {
 }
 
 impl Metadata {
-    fn new(filename : &str, max_recs : u32, rec_count : u32) -> Self {
+    fn new(filename : &str) -> Self {
         let mut md = Metadata {
             fname : String::from(filename),
-            max_records : max_recs,
-            record_count : rec_count,
-            tags : Vec::with_capacity(max_recs as usize),
-            values : Vec::with_capacity(max_recs as usize),
+            max_records : MAX_RECORDS,
+            record_count : 0,
+            tags : Vec::with_capacity(MAX_RECORDS as usize),
+            values : Vec::with_capacity(MAX_RECORDS as usize),
         };
 
         // inflate the vectors
@@ -69,21 +71,21 @@ impl Metadata {
 
     // path must be validated to exist before
     fn read_from_file(path : &Path) -> Self {
+        let mut md = Metadata::new(path.to_str().unwrap());
         let mut f = File::open(path).unwrap();
-        let max_recs = f.read_u32::<LittleEndian>().unwrap();
-        let rec_count = f.read_u32::<LittleEndian>().unwrap();
+        md.max_records = f.read_u32::<LittleEndian>().unwrap();
+        md.record_count = f.read_u32::<LittleEndian>().unwrap();
 
-        let mut md = Metadata::new(path.to_str().unwrap(), max_recs, rec_count);
         // read tags. today we read all tags and values, including the empty
         // ones. an optimization could be to read only the used tags and
         // values. with 100 max records, it doesn't matter much at the moment.
-        for i in 0..max_recs as usize {
+        for i in 0..md.max_records as usize {
             f.read_exact(&mut md.tags[i].tag).unwrap();
             md.tags[i].flags = f.read_u64::<LittleEndian>().unwrap();
         }
 
         // read values
-        for i in 0..max_recs as usize {
+        for i in 0..md.max_records as usize {
             f.read_exact(&mut md.values[i]).unwrap();
         }
 
@@ -96,42 +98,12 @@ fn cstring_to_str(bytes : &[u8]) -> &str {
     std::str::from_utf8(&bytes[0..first_index_of_null]).expect("cstring not a valid string!")
 }
 
-fn init_note1(path : &Path) -> Metadata {
-    println!("[+] File {} doesn't exist so creating and initializing it", path.display());
-    let check = path.try_exists();
-    assert!(check.is_ok());
-    assert!(!check.ok().unwrap());
-
-    let md = Metadata::new(path.to_str().unwrap(), 100, 0);
-
-    md
-}
-
-// TODO: implement this properly
-// To parse file: https://users.rust-lang.org/t/reading-binary-data-to-structs/109431/3
-fn open_note1(path : &Path) -> Metadata {
-    println!("[+] File {} already exist so just opening it", path.display());
-    let check = path.try_exists();
-    assert!(check.is_ok());
-    assert!(check.ok().unwrap());
-
-    Metadata::new(path.to_str().unwrap(), 100, 20)
-}
-
 fn transform(mut target : &mut [u8], source : &str) {
     // TODO: encrypt using ChaCha Poly here
     target.write_all(source.as_bytes()).unwrap();
 }
 
 pub fn post(path : &str, tag : &str, value : &str) {
-    // 0. check args:
-    // 1. if file at path doesn't exist, prepare it:
-    //  a. create the file
-    //  b. set max records
-    //  c. return the whole file in a buffer or some meta data struct
-    // 2. open the file
-    // 3. get all records in the file and see if tag already exists. if it does, return error
-    // 4. add new string
     if !tag.is_ascii() || !value.is_ascii() {
         eprintln!("<TAG> and <VALUE> both must consist of ASCII characters only");
         return;
@@ -147,10 +119,9 @@ pub fn post(path : &str, tag : &str, value : &str) {
     match path.try_exists() {
         Ok(exists) => {
             md = if exists {
-                // TODO: this can return error because file may fail to create
-                open_note1(path)
+                Metadata::read_from_file(path)
             } else {
-                init_note1(path)
+                Metadata::new(path.to_str().unwrap())
             }
         },
         Err(e) => {
@@ -246,5 +217,6 @@ mod tests {
         assert_eq!(cstring_to_str(&md.values[0]), "u: abcd p: 1234");
     }
 
+    // TODO: add test to check for duplicate record
 
 }
