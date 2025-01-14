@@ -1,6 +1,6 @@
-use std::{fs::File, io::{Seek, Write}, path::Path, usize};
+use std::{fs::File, io::{Read, Write}, path::Path, usize};
 
-use byteorder::{LittleEndian, WriteBytesExt};
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 // note1.file format is simple but open to evolve as and when need arises.
 // the format is based on concept of "record". a record is a (tag, value) pair.
@@ -23,21 +23,29 @@ struct TagRec {
 }
 struct Metadata {
     fname : String,
-    record_count : u32,
     max_records : u32,
+    record_count : u32,
     tags : Vec<TagRec>,
     values : Vec<[u8;256]>,
 }
 
 impl Metadata {
-    fn new(filename : &str, rec_count : u32, max_recs : u32) -> Self {
-        Metadata {
+    fn new(filename : &str, max_recs : u32, rec_count : u32) -> Self {
+        let mut md = Metadata {
             fname : String::from(filename),
-            record_count : rec_count,
             max_records : max_recs,
+            record_count : rec_count,
             tags : Vec::with_capacity(max_recs as usize),
             values : Vec::with_capacity(max_recs as usize),
+        };
+
+        // inflate the vectors
+        for _i in 0..md.max_records {
+            md.tags.push(TagRec { tag: [0; 248], flags: 0x1 });
+            md.values.push([0; 256]);
         }
+
+        md
     }
 
     fn write_to_file(&mut self) {
@@ -57,6 +65,29 @@ impl Metadata {
             f.write_all(val).unwrap();
         }
     }
+
+    // path must be validated to exist before
+    fn read_from_file(path : &Path) -> Self {
+        let mut f = File::open(path).unwrap();
+        let max_recs = f.read_u32::<LittleEndian>().unwrap();
+        let rec_count = f.read_u32::<LittleEndian>().unwrap();
+
+        let mut md = Metadata::new(path.to_str().unwrap(), max_recs, rec_count);
+        // read tags. today we read all tags and values, including the empty
+        // ones. an optimization could be to read only the used tags and
+        // values. with 100 max records, it doesn't matter much at the moment.
+        for i in 0..max_recs as usize {
+            f.read_exact(&mut md.tags[i].tag).unwrap();
+            md.tags[i].flags = f.read_u64::<LittleEndian>().unwrap();
+        }
+
+        // read values
+        for i in 0..max_recs as usize {
+            f.read_exact(&mut md.values[i]).unwrap();
+        }
+
+        md
+    }
 }
 
 fn init_note1(path : &Path) -> Metadata {
@@ -65,11 +96,7 @@ fn init_note1(path : &Path) -> Metadata {
     assert!(check.is_ok());
     assert!(!check.ok().unwrap());
 
-    let mut md = Metadata::new(path.to_str().unwrap(), 0, 100);
-    for _i in 0..md.max_records {
-        md.tags.push(TagRec { tag: [0; 248], flags: 0x1 });
-        md.values.push([0; 256]);
-    }
+    let md = Metadata::new(path.to_str().unwrap(), 100, 0);
 
     md
 }
@@ -82,7 +109,7 @@ fn open_note1(path : &Path) -> Metadata {
     assert!(check.is_ok());
     assert!(check.ok().unwrap());
 
-    Metadata::new(path.to_str().unwrap(), 20, 100)
+    Metadata::new(path.to_str().unwrap(), 100, 20)
 }
 
 fn transform(mut target : &mut [u8], source : &str) {
@@ -166,6 +193,8 @@ pub fn post(path : &str, tag : &str, value : &str) {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use byteorder::{LittleEndian, WriteBytesExt};
 
     use super::*;
@@ -199,7 +228,18 @@ mod tests {
 
     #[test]
     fn test_post() {
+        fs::remove_file("note1.file").ok();
         post("note1.file", "yahoo.com", "u: abcd p: 1234");
+
+        let md = Metadata::read_from_file(Path::new("note1.file"));
+
+        assert_eq!(md.max_records, 100);
+        assert_eq!(md.record_count, 1);
+        let first_null_index = md.tags[0].tag.iter().position(|&c| c == b'\0').unwrap_or(md.tags.len());
+        assert_eq!(std::str::from_utf8(&md.tags[0].tag[0..first_null_index]).unwrap(), "yahoo.com");
+        assert_eq!(md.tags[0].flags, 0x1);
+        let first_null_index = md.values[0].iter().position(|&c| c == b'\0').unwrap_or(md.values[0].len());
+        assert_eq!(std::str::from_utf8(&md.values[0][0..first_null_index]).unwrap(), "u: abcd p: 1234");
     }
 
 
