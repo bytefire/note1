@@ -1,4 +1,4 @@
-A very hacky personal project to play around with.
+A very hacky fun project to play around with.
 
 It has a CLI which allows users to store, view and edit key-value pairs. The
 CLI wraps lib.rs which exposes HTTP verbs get, post, put and delete to operate

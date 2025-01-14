@@ -11,10 +11,12 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 // first 4 bytes: max number of records supported by this file
 // next 4 bytes: total number of records currently in this file
 // next max_records x 256 bytes: tags
-//      each tag = 248 bytes of ascii text + 8 bytes reserved (currently just LSB (boolean) is used as `is_empty`` flag)
+//      each tag = 248 bytes of ascii text + 8 bytes reserved (currently just
+//          LSB (boolean) is used as used (1) / empty (0) flag)
 // next max_records x 256 bytes: values
-//      each value corresponds, in relative order, to the tag in the list of tags above. e.g. the value at values[i]
-//          corresponds to the tag at tags[i].
+//      each value corresponds, in relative order, to the tag in the list of
+//          tags above. e.g. the value at values[i] corresponds to the tag at
+//          tags[i].
 //      each value is encrypted using a different key.
 
 const MAX_RECORDS : u32 = 100;
@@ -33,6 +35,24 @@ pub const HTTP_INTERNAL_SERVER_ERROR : u32 = 500;
 struct TagRec {
     tag : [u8;248],
     flags : u64,
+}
+
+impl TagRec {
+    fn is_empty(&self) -> bool {
+        return if self.flags & 0x1 == 0 {
+            true
+        } else {
+            false
+        }
+    }
+
+    fn set_is_empty(&mut self, is_empty : bool) {
+        if is_empty {
+            self.flags &= 0xfffffffffffffffe;
+        } else {
+            self.flags |= 0x1;
+        }
+    }
 }
 
 struct Metadata {
@@ -114,14 +134,13 @@ fn transform(mut target : &mut [u8], source : &str) {
     target.write_all(source.as_bytes()).unwrap();
 }
 
-// next: define http codes and return that accordingly
-pub fn get(path : &str, _tag : &str) -> Result<String, u32> {
+pub fn get(path : &str, tag : &str) -> Result<String, u32> {
     let path = Path::new(path);
-    let _md;
+    let md;
     match path.try_exists() {
         Ok(exists) => {
             if exists {
-                _md = Metadata::read_from_file(path);
+                md = Metadata::read_from_file(path);
             } else {
                 eprintln!("File {} doesn't exist!", path.to_str().unwrap());
                 return Err(HTTP_NOT_FOUND);
@@ -132,8 +151,20 @@ pub fn get(path : &str, _tag : &str) -> Result<String, u32> {
             return Err(HTTP_INTERNAL_SERVER_ERROR);
         }
     }
-    // TODO: temporarily here to shut up linter
-    Ok(String::new())
+
+    // here means md has been initialized. search for matching tag.
+    for (index, t) in md.tags.iter().enumerate() {
+        // skip empty records.
+        if t.is_empty() {
+            continue;
+        }
+        if tag ==  cstring_to_str(&t.tag) {
+            return Ok(String::from(cstring_to_str(&md.values[index])));
+        }
+    }
+    // here means we didn't find the tag
+    eprintln!("[-] Failed to find the tag '{}'", tag);
+    Err(HTTP_NOT_FOUND)
 }
 
 pub fn post(path : &str, tag : &str, value : &str) -> u32 {
@@ -166,8 +197,8 @@ pub fn post(path : &str, tag : &str, value : &str) -> u32 {
     // TODO: check for number of available records and if not available then increase max_records.
     let mut first_empty_index = usize::MAX;
     for (i, t) in (&md.tags).iter().enumerate() {
-        // check for is_empty and if so, skip that tag
-        if t.flags & 0x1 == 0x1 {
+        // check whether tag is empty and if so, skip that tag
+        if t.is_empty() {
             if first_empty_index == usize::MAX {
                 first_empty_index = i;
             }
@@ -184,8 +215,10 @@ pub fn post(path : &str, tag : &str, value : &str) -> u32 {
     // here means the tag doesn't exist so let's add it at index `first_empty_index`
     let mut tr = TagRec {
         tag : [0; 248],
-        flags : 0x1,
+        flags : 0x0,
     };
+
+    tr.set_is_empty(false);
 
     let mut bref : &mut[u8] = &mut tr.tag;
     bref.write_all(tag.as_bytes()).unwrap();

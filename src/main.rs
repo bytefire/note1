@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 
-use note1::post;
+use note1::{get, post};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -37,7 +37,10 @@ enum Commands {
 fn main() {
     let cli = Cli::parse();
     match cli.cmd {
-        Commands::Get {tag} => println!("GET /{}", tag),
+        Commands::Get {tag} => match get("./note1.file", &tag) {
+                Ok(v) => println!("tag: {}\nvalue: {}", tag, &v),
+                Err(e) => println!("HTTP status code: {}", e),
+            },
         Commands::Post { tag, value } => { post("./note1.file", &tag, &value); },
         Commands::Put { tag, value } => println!("PUT /{}\n{}", tag, value),
         Commands::Delete { tag } => println!("DELETE /{}", tag),
