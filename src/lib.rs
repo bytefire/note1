@@ -102,6 +102,8 @@ impl Metadata {
             f.write_all(val).unwrap();
         }
 
+        f.sync_all().unwrap();
+
         // TODO: for security, after writing to file, clear md from memory
     }
 
@@ -116,18 +118,12 @@ impl Metadata {
         // ones. an optimization could be to read only the used tags and
         // values. with 100 max records, it doesn't matter much at the moment.
         for i in 0..md.max_records as usize {
-            // FIXME: read_exact sometimes fails with:
-            // thread 'tests::test_max_records' panicked at src/lib.rs:125:45:
-            // called `Result::unwrap()` on an `Err` value: Error { kind: UnexpectedEof, message: "failed to fill whole buffer" }
             f.read_exact(&mut md.tags[i].tag).unwrap();
             md.tags[i].flags = f.read_u64::<LittleEndian>().unwrap();
         }
 
         // read values
         for i in 0..md.max_records as usize {
-            // FIXME: read_exact sometimes fails with:
-            // thread 'tests::test_max_records' panicked at src/lib.rs:125:45:
-            // called `Result::unwrap()` on an `Err` value: Error { kind: UnexpectedEof, message: "failed to fill whole buffer" }
             f.read_exact(&mut md.values[i]).unwrap();
         }
 
@@ -315,34 +311,7 @@ pub fn delete(path : &str, tag : &str) -> u32 {
 mod tests {
     use std::fs;
 
-    use byteorder::{LittleEndian, WriteBytesExt};
-
     use super::*;
-
-    struct Data {
-        count1 : u32,
-        count2 : u32,
-        list1 : [u8; 32],
-    }
-
-    #[test]
-    fn test_binary_serialization() {
-        let mut d = Data {
-            count1 : 0xabcdef12,
-            count2 : 0x12345678,
-            list1 : [0xa5; 32],
-
-        };
-
-        d.list1[31] = 0;
-        d.list1[30] = 1;
-
-        let mut f = File::create("test1.file").unwrap();
-        f.write_u32::<LittleEndian>(d.count1).unwrap();
-        f.write_u32::<LittleEndian>(d.count2).unwrap();
-        f.write_all(&d.list1).unwrap();
-
-    }
 
     #[test]
     fn test_post() {
