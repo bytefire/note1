@@ -151,6 +151,11 @@ impl Metadata {
         self.tags[index].tag.fill(0);
         self.values[index].fill(0);
     }
+
+    fn set_value_at_index(&mut self, index : usize, new_value : &str) {
+        let mut dest : &mut [u8] = &mut self.values[index];
+        dest.write_all(new_value.as_bytes()).unwrap();
+    }
 }
 
 fn cstring_to_str(bytes : &[u8]) -> &str {
@@ -311,9 +316,36 @@ pub fn delete(path : &str, tag : &str) -> u32 {
     HTTP_OK
 }
 
+pub fn put(path : &str, tag : &str, new_value : &str) -> u32 {
+    let ret = validate_tag_and_value(tag, new_value);
+    if ret != HTTP_OK { return ret; }
+
+    let mut md;
+    match validate_path_and_get_md(path) {
+        Ok(m) => md = m,
+        Err(e) => return e,
+    }
+
+    let index;
+    match md.index_of_matching_tag(tag) {
+        Some(i) => index = i,
+        None => {
+            eprintln!("[-] Tag '{}' doesn't exist.", tag);
+            return HTTP_NOT_FOUND;
+        }
+    }
+
+    // TODO: encrypt value with per-record key
+    md.set_value_at_index(index, new_value);
+    md.write_to_file();
+
+    HTTP_OK
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use rand::distributions::{Alphanumeric, DistString};
 
     use super::*;
 
@@ -412,5 +444,26 @@ mod tests {
 
         let ret = post("note1.file", "key_more", "value_more");
         assert_eq!(ret, HTTP_OK);
+    }
+
+    #[test]
+    fn test_put() {
+        let path = Alphanumeric.sample_string(&mut rand::thread_rng(), 12);
+        fs::remove_file(&path).ok();
+
+        let ret = post(&path, "yahoo.com", "u: abcd p: 1234");
+        assert_eq!(ret, HTTP_OK);
+
+        let ret = put(&path, "yahoo2.com", "xyz");
+        assert_eq!(ret, HTTP_NOT_FOUND);
+
+        let ret = put(&path, "yahoo.com", "u: abcd p: 5678");
+        assert_eq!(ret, HTTP_OK);
+
+        let ret = get(&path, "yahoo.com");
+        assert!(ret.is_ok());
+        assert_eq!(ret.unwrap(), "u: abcd p: 5678");
+
+        fs::remove_file(&path).ok();
     }
 }
