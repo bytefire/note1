@@ -158,27 +158,50 @@ fn cstring_to_str(bytes : &[u8]) -> &str {
     std::str::from_utf8(&bytes[0..first_index_of_null]).expect("cstring not a valid string!")
 }
 
-fn transform(mut target : &mut [u8], source : &str) {
-    // TODO: encrypt using ChaCha Poly here
-    target.write_all(source.as_bytes()).unwrap();
+fn validate_tag_and_value(tag : &str, value : &str) -> u32 {
+    if !tag.is_ascii() || !value.is_ascii() {
+        eprintln!("<TAG> and <VALUE> both must consist of ASCII characters only");
+        return HTTP_BAD_REQUEST;
+    }
+
+    if tag.len() > 248 || value.len() > 256 {
+        eprintln!("<TAG> must not be more than 248 <VALUE> must not be more than 256 ASCII characters long");
+        return HTTP_BAD_REQUEST;
+    }
+
+    HTTP_OK
 }
 
-pub fn get(path : &str, tag : &str) -> Result<String, u32> {
+fn validate_path_and_get_md(path : &str) -> Result<Metadata, u32> {
     let path = Path::new(path);
-    let md;
+
     match path.try_exists() {
         Ok(exists) => {
             if exists {
-                md = Metadata::read_from_file(path);
+                return Ok(Metadata::read_from_file(path));
             } else {
                 eprintln!("File {} doesn't exist!", path.to_str().unwrap());
                 return Err(HTTP_NOT_FOUND);
             }
         },
         Err(e) => {
-            eprintln!("Failed to open or create the backing file {}: {}", path.display(), e);
+            eprintln!("[!] Failed to open file {}: {}", path.to_str().unwrap(), e);
             return Err(HTTP_INTERNAL_SERVER_ERROR);
         }
+    }
+}
+
+fn transform(mut target : &mut [u8], source : &str) {
+    // TODO: encrypt using ChaCha Poly here
+    target.write_all(source.as_bytes()).unwrap();
+}
+
+pub fn get(path : &str, tag : &str) -> Result<String, u32> {
+    let md;
+
+    match validate_path_and_get_md(path) {
+        Ok(m) => md = m,
+        Err(e) => return Err(e),
     }
 
     // here means md has been initialized. search for matching tag.
@@ -192,15 +215,8 @@ pub fn get(path : &str, tag : &str) -> Result<String, u32> {
 }
 
 pub fn post(path : &str, tag : &str, value : &str) -> u32 {
-    if !tag.is_ascii() || !value.is_ascii() {
-        eprintln!("<TAG> and <VALUE> both must consist of ASCII characters only");
-        return HTTP_BAD_REQUEST;
-    }
-
-    if tag.len() > 248 || value.len() > 256 {
-        eprintln!("<TAG> must not be more than 248 <VALUE> must not be more than 256 ASCII characters long");
-        return HTTP_BAD_REQUEST;
-    }
+    let ret = validate_tag_and_value(tag, value);
+    if ret != HTTP_OK { return ret; }
 
     let mut md;
     let path = Path::new(path);
@@ -272,22 +288,10 @@ pub fn post(path : &str, tag : &str, value : &str) -> u32 {
 }
 
 pub fn delete(path : &str, tag : &str) -> u32 {
-    let path = Path::new(path);
     let mut md;
-
-    match path.try_exists() {
-        Ok(exists) => {
-            if exists {
-                md = Metadata::read_from_file(path);
-            } else {
-                eprintln!("File {} doesn't exist!", path.to_str().unwrap());
-                return HTTP_NOT_FOUND;
-            }
-        },
-        Err(e) => {
-            eprintln!("[!] Failed to open file {}: {}", path.to_str().unwrap(), e);
-            return HTTP_INTERNAL_SERVER_ERROR;
-        }
+    match validate_path_and_get_md(path) {
+        Ok(m) => md = m,
+        Err(e) => return e,
     }
 
     // here means md is valid
