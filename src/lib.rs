@@ -351,38 +351,44 @@ mod tests {
 
     #[test]
     fn test_post() {
-        fs::remove_file("note1.file").ok();
-        post("note1.file", "yahoo.com", "u: abcd p: 1234");
+        let path = Alphanumeric.sample_string(&mut rand::thread_rng(), 12);
+        assert!(!fs::exists(&path).unwrap());
 
-        let md = Metadata::read_from_file(Path::new("note1.file"));
+        post(&path, "yahoo.com", "u: abcd p: 1234");
+
+        let md = Metadata::read_from_file(Path::new(&path));
 
         assert_eq!(md.max_records, MAX_RECORDS);
         assert_eq!(md.record_count, 1);
         assert_eq!(cstring_to_str(&md.tags[0].tag), "yahoo.com");
         assert_eq!(md.tags[0].flags, 0x1);
         assert_eq!(cstring_to_str(&md.values[0]), "u: abcd p: 1234");
+
+        fs::remove_file(&path).ok();
     }
 
     #[test]
     fn test_duplicate_records() {
-        fs::remove_file("note1.file").ok();
-        let ret1 = post("note1.file", "yahoo.com", "u: abcd p: 1234");
+        let path = Alphanumeric.sample_string(&mut rand::thread_rng(), 12);
+        assert!(!fs::exists(&path).unwrap());
+
+        let ret1 = post(&path, "yahoo.com", "u: abcd p: 1234");
         assert_eq!(ret1, HTTP_OK);
 
-        let ret2 = post("note1.file", "yahoo.com", "u: second_user p: second_password");
+        let ret2 = post(&path, "yahoo.com", "u: second_user p: second_password");
         assert_eq!(ret2, HTTP_CONFLICT);
 
-        let md = Metadata::read_from_file(Path::new("note1.file"));
+        let md = Metadata::read_from_file(Path::new(&path));
 
         assert_eq!(md.record_count, 1);
         assert_eq!(md.index_of_matching_tag("yahoo.com").unwrap(), 0);
-        assert_eq!(md.fname, "note1.file");
+        assert_eq!(md.fname, path.as_str());
         assert_eq!(md.tags[0].is_empty(), false);
         assert_eq!(md.tags[0].flags, 1);
         assert_eq!(cstring_to_str(&md.tags[0].tag), "yahoo.com");
         assert_eq!(cstring_to_str(&md.values[0]), "u: abcd p: 1234");
 
-        let val = get("note1.file", "yahoo.com");
+        let val = get(&path, "yahoo.com");
         assert!(val.is_ok());
         assert_eq!(val.unwrap(), "u: abcd p: 1234");
 
@@ -393,63 +399,74 @@ mod tests {
             assert_eq!(md.values[i + 1], [0; 256]);
         }
 
+        fs::remove_file(&path).ok();
     }
 
     #[test]
     fn test_delete_record() {
-        fs::remove_file("note1.file").ok();
-        let ret = post("note1.file", "yahoo.com", "u: abcd p: 1234");
+        let path = Alphanumeric.sample_string(&mut rand::thread_rng(), 12);
+        assert!(!fs::exists(&path).unwrap());
+
+        let ret = post(&path, "yahoo.com", "u: abcd p: 1234");
         assert_eq!(ret, HTTP_OK);
 
-        let ret = delete("note1.file", "yahoo.com1");
+        let ret = delete(&path, "yahoo.com1");
         assert_eq!(ret, HTTP_NOT_FOUND);
 
-        let ret = get("note1.file", "yahoo.com");
+        let ret = get(&path, "yahoo.com");
         assert!(ret.is_ok_and(|v| v == "u: abcd p: 1234"));
 
-        let ret = delete("note1.file", "yahoo.com");
+        let ret = delete(&path, "yahoo.com");
         assert_eq!(ret, HTTP_OK);
 
-        let ret = get("note1.file", "yahoo.com");
+        let ret = get(&path, "yahoo.com");
         assert!(ret.is_err());
         assert_eq!(ret.unwrap_err(), HTTP_NOT_FOUND);
+
+        fs::remove_file(&path).ok();
     }
 
     #[test]
     fn test_record_count() {
-        fs::remove_file("note1.file").ok();
+        let path = Alphanumeric.sample_string(&mut rand::thread_rng(), 12);
+        assert!(!fs::exists(&path).unwrap());
 
-        let ret = post("note1.file", "yahoo.com", "u: abcd p: 1234");
+        let ret = post(&path, "yahoo.com", "u: abcd p: 1234");
         assert_eq!(ret, HTTP_OK);
 
-        let md = Metadata::read_from_file(Path::new("note1.file"));
+        let md = Metadata::read_from_file(Path::new(&path));
         assert_eq!(md.record_count, 1);
         assert_eq!(md.max_records, MAX_RECORDS);
+
+        fs::remove_file(&path).ok();
     }
 
     #[test]
     fn test_max_records() {
-        fs::remove_file("note1.file").ok();
+        let path = Alphanumeric.sample_string(&mut rand::thread_rng(), 12);
+        assert!(!fs::exists(&path).unwrap());
 
         for i in 0..MAX_RECORDS {
-            let ret = post("note1.file", format!("key{}", i).as_str(), format!("value{}", i).as_str());
+            let ret = post(&path, format!("key{}", i).as_str(), format!("value{}", i).as_str());
             assert_eq!(ret, HTTP_OK);
         }
 
-        let ret = post("note1.file", "key_more", "value_more");
+        let ret = post(&path, "key_more", "value_more");
         assert_eq!(ret, HTTP_INSUFFICIENT_STORAGE);
 
-        let ret = delete("note1.file", "key3");
+        let ret = delete(&path, "key3");
         assert_eq!(ret, HTTP_OK);
 
-        let ret = post("note1.file", "key_more", "value_more");
+        let ret = post(&path, "key_more", "value_more");
         assert_eq!(ret, HTTP_OK);
+
+        fs::remove_file(&path).ok();
     }
 
     #[test]
     fn test_put() {
         let path = Alphanumeric.sample_string(&mut rand::thread_rng(), 12);
-        fs::remove_file(&path).ok();
+        assert!(!fs::exists(&path).unwrap());
 
         let ret = post(&path, "yahoo.com", "u: abcd p: 1234");
         assert_eq!(ret, HTTP_OK);
