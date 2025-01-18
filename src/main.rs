@@ -11,17 +11,23 @@ struct Cli {
 
 #[derive(Subcommand, Debug, Clone)]
 enum Commands {
-    /// Get all tags and values
+    /// Initialize note1 instance. This asks for master password and creates
+    /// the database file note1.file in the same directory.
+    Init,
+    /// Lists all the tags in the database and some other info such as number
+    /// of records and total number of records.
+    List,
+    /// Get value associated with the provided <tag>.
     Get {
         tag : String,
     },
     /// Add a new tag and value
-    Post {
+    Add {
         tag : String,
         value : String,
     },
     /// Edit an existing tag's value
-    Put {
+    Update {
         tag : String,
         value : String,
     },
@@ -37,12 +43,14 @@ enum Commands {
 fn main() {
     let cli = Cli::parse();
     match cli.cmd {
+        Commands::Init => println!("init..."),
+        Commands::List => println!("listing..."),
         Commands::Get {tag} => match get("./note1.file", &tag) {
                 Ok(v) => println!("tag: {}\nvalue: {}", tag, &v),
                 Err(e) => println!("HTTP status code: {}", e),
             },
-        Commands::Post { tag, value } => { post("./note1.file", &tag, &value); },
-        Commands::Put { tag, value } => println!("PUT /{}\n{}", tag, value),
+        Commands::Add { tag, value } => { post("./note1.file", &tag, &value); },
+        Commands::Update { tag, value } => println!("PUT /{}\n{}", tag, value),
         Commands::Delete { tag } => println!("DELETE /{}", tag),
     }
 }
