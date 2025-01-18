@@ -1,6 +1,8 @@
+use std::path::Path;
+
 use clap::{Parser, Subcommand};
 
-use note1::{get, post};
+use note1::{get, init, post};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -36,6 +38,19 @@ enum Commands {
         tag : String,
     },
 }
+
+fn prep_init() {
+    let path = Path::new("./note1.file");
+    let exists = path.try_exists().unwrap();
+    if exists {
+        eprintln!("ERROR: cannot init. Database file {} already exists.", path.to_str().unwrap());
+        return;
+    }
+
+    let password = rpassword::prompt_password("Enter master password: ").unwrap();
+
+    init(path.to_str().unwrap(), &password);
+}
 // TODO: allow the app to take full path to file name using an environment variable.
 //      default file name is ./note1.file
 // TODO: search for ./note1.file in the directory where note1 executable is.
@@ -43,7 +58,7 @@ enum Commands {
 fn main() {
     let cli = Cli::parse();
     match cli.cmd {
-        Commands::Init => println!("init..."),
+        Commands::Init => prep_init(),
         Commands::List => println!("listing..."),
         Commands::Get {tag} => match get("./note1.file", &tag) {
                 Ok(v) => println!("tag: {}\nvalue: {}", tag, &v),

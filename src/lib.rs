@@ -230,6 +230,7 @@ pub fn post(path : &str, tag : &str, value : &str) -> u32 {
             md = if exists {
                 Metadata::read_from_file(path)
             } else {
+                // TODO: remove this line and replace the whole "match" with validate_path_and_get_md()
                 Metadata::new(path.to_str().unwrap())
             }
         },
@@ -340,6 +341,25 @@ pub fn put(path : &str, tag : &str, new_value : &str) -> u32 {
     md.write_to_file();
 
     HTTP_OK
+}
+
+pub fn init(path : &str, _password : &str) -> u32 {
+    let path = Path::new(path);
+    let ret = path.try_exists();
+    assert!(ret.is_ok());
+    assert!(ret.unwrap() == false);
+
+    let mut md = Metadata::new(path.to_str().unwrap());
+
+    // TODO:
+    //      1. generate key from password using Argon2id
+    //      2. encrypt tags (not max_records or record_count)
+    //      3. encrypt each value with a different key generated using Argon2id
+    //      4. now md contains encrypted data. above encryptions update md itself.
+
+    md.write_to_file();
+
+    return HTTP_OK;
 }
 
 #[cfg(test)]
