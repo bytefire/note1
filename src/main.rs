@@ -39,7 +39,7 @@ enum Commands {
     },
 }
 
-fn prep_init() {
+fn prep_init(password : &str) {
     let path = Path::new("./note1.file");
     let exists = path.try_exists().unwrap();
     if exists {
@@ -47,24 +47,7 @@ fn prep_init() {
         return;
     }
 
-    let password = rpassword::prompt_password("Enter master password: ").unwrap();
-
-    init(path.to_str().unwrap(), &password);
-}
-
-fn prep_add(tag : &str, value : &str) {
-    let password = rpassword::prompt_password("Enter master password: ").unwrap();
-    post("./note1.file", &password, tag, value);
-}
-
-fn prep_update(tag : &str, value : &str) {
-    let password = rpassword::prompt_password("Enter master password: ").unwrap();
-    put("./note1.file", &password, tag, value);
-}
-
-fn prep_delete(tag : &str) {
-    let password = rpassword::prompt_password("Enter master password: ").unwrap();
-    delete("./note1.file", &password, tag);
+    init(path.to_str().unwrap(), password);
 }
 
 // TODO: allow the app to take full path to file name using an environment variable.
@@ -73,15 +56,17 @@ fn prep_delete(tag : &str) {
 //      by default ./ searches in the directory where the command is run from.
 fn main() {
     let cli = Cli::parse();
+    let password = rpassword::prompt_password("Enter master password: ").unwrap();
+
     match cli.cmd {
-        Commands::Init => prep_init(),
+        Commands::Init => prep_init(&password),
         Commands::List => println!("listing..."),
         Commands::Get {tag} => match get("./note1.file", &tag) {
                 Ok(v) => println!("tag: {}\nvalue: {}", tag, &v),
                 Err(e) => println!("HTTP status code: {}", e),
             },
-        Commands::Add { tag, value } => prep_add(&tag, &value),
-        Commands::Update { tag, value } => prep_update(&tag, &value),
-        Commands::Delete { tag } => prep_delete(&tag),
+        Commands::Add { tag, value } => { post("./note1.file", &password, &tag, &value); },
+        Commands::Update { tag, value } => { put("./note1.file", &password, &tag, &value); },
+        Commands::Delete { tag } => { delete("./note1.file", &password, &tag); },
     }
 }
