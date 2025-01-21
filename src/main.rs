@@ -2,7 +2,7 @@ use std::path::Path;
 
 use clap::{Parser, Subcommand};
 
-use note1::{get, init, post};
+use note1::{get, init, post, put};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -56,6 +56,12 @@ fn prep_add(tag : &str, value : &str) {
     let password = rpassword::prompt_password("Enter master password: ").unwrap();
     post("./note1.file", &password, tag, value);
 }
+
+fn prep_update(tag : &str, value : &str) {
+    let password = rpassword::prompt_password("Enter master password: ").unwrap();
+    put("./note1.file", &password, tag, value);
+}
+
 // TODO: allow the app to take full path to file name using an environment variable.
 //      default file name is ./note1.file
 // TODO: search for ./note1.file in the directory where note1 executable is.
@@ -70,7 +76,7 @@ fn main() {
                 Err(e) => println!("HTTP status code: {}", e),
             },
         Commands::Add { tag, value } => prep_add(&tag, &value),
-        Commands::Update { tag, value } => println!("PUT /{}\n{}", tag, value),
+        Commands::Update { tag, value } => prep_update(&tag, &value),
         Commands::Delete { tag } => println!("DELETE /{}", tag),
     }
 }

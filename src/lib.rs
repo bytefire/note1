@@ -307,7 +307,7 @@ pub fn delete(path : &str, tag : &str) -> u32 {
     HTTP_OK
 }
 
-pub fn put(path : &str, tag : &str, new_value : &str) -> u32 {
+pub fn put(path : &str, _password : &str, tag : &str, new_value : &str) -> u32 {
     let ret = validate_tag_and_value(tag, new_value);
     if ret != HTTP_OK { return ret; }
 
@@ -497,10 +497,10 @@ mod tests {
         let ret = post(&path, "mypass", "yahoo.com", "u: abcd p: 1234");
         assert_eq!(ret, HTTP_OK);
 
-        let ret = put(&path, "yahoo2.com", "xyz");
+        let ret = put(&path, "mypass", "yahoo2.com", "xyz");
         assert_eq!(ret, HTTP_NOT_FOUND);
 
-        let ret = put(&path, "yahoo.com", "u: abcd p: 5678");
+        let ret = put(&path, "mypass", "yahoo.com", "u: abcd p: 5678");
         assert_eq!(ret, HTTP_OK);
 
         let ret = get(&path, "yahoo.com");
