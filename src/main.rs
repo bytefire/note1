@@ -51,6 +51,11 @@ fn prep_init() {
 
     init(path.to_str().unwrap(), &password);
 }
+
+fn prep_add(tag : &str, value : &str) {
+    let password = rpassword::prompt_password("Enter master password: ").unwrap();
+    post("./note1.file", &password, tag, value);
+}
 // TODO: allow the app to take full path to file name using an environment variable.
 //      default file name is ./note1.file
 // TODO: search for ./note1.file in the directory where note1 executable is.
@@ -64,7 +69,7 @@ fn main() {
                 Ok(v) => println!("tag: {}\nvalue: {}", tag, &v),
                 Err(e) => println!("HTTP status code: {}", e),
             },
-        Commands::Add { tag, value } => { post("./note1.file", &tag, &value); },
+        Commands::Add { tag, value } => prep_add(&tag, &value),
         Commands::Update { tag, value } => println!("PUT /{}\n{}", tag, value),
         Commands::Delete { tag } => println!("DELETE /{}", tag),
     }

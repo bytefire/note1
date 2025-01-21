@@ -220,7 +220,7 @@ pub fn get(path : &str, tag : &str) -> Result<String, u32> {
     }
 }
 
-pub fn post(path : &str, tag : &str, value : &str) -> u32 {
+pub fn post(path : &str, _password : &str, tag : &str, value : &str) -> u32 {
     let ret = validate_tag_and_value(tag, value);
     if ret != HTTP_OK { return ret; }
 
@@ -365,7 +365,7 @@ mod tests {
         assert!(!fs::exists(&path).unwrap());
 
         init(&path, "mypass");
-        post(&path, "yahoo.com", "u: abcd p: 1234");
+        post(&path, "mypass", "yahoo.com", "u: abcd p: 1234");
 
         let md = Metadata::read_from_file(Path::new(&path));
 
@@ -386,10 +386,10 @@ mod tests {
         let ret1 = init(&path, "mypass");
         assert_eq!(ret1, HTTP_OK);
 
-        let ret1 = post(&path, "yahoo.com", "u: abcd p: 1234");
+        let ret1 = post(&path, "mypass", "yahoo.com", "u: abcd p: 1234");
         assert_eq!(ret1, HTTP_OK);
 
-        let ret2 = post(&path, "yahoo.com", "u: second_user p: second_password");
+        let ret2 = post(&path, "mypass", "yahoo.com", "u: second_user p: second_password");
         assert_eq!(ret2, HTTP_CONFLICT);
 
         let md = Metadata::read_from_file(Path::new(&path));
@@ -424,7 +424,7 @@ mod tests {
         let ret1 = init(&path, "mypass");
         assert_eq!(ret1, HTTP_OK);
 
-        let ret = post(&path, "yahoo.com", "u: abcd p: 1234");
+        let ret = post(&path, "mypass", "yahoo.com", "u: abcd p: 1234");
         assert_eq!(ret, HTTP_OK);
 
         let ret = delete(&path, "yahoo.com1");
@@ -451,7 +451,7 @@ mod tests {
         let ret1 = init(&path, "mypass");
         assert_eq!(ret1, HTTP_OK);
 
-        let ret = post(&path, "yahoo.com", "u: abcd p: 1234");
+        let ret = post(&path, "mypass", "yahoo.com", "u: abcd p: 1234");
         assert_eq!(ret, HTTP_OK);
 
         let md = Metadata::read_from_file(Path::new(&path));
@@ -470,17 +470,17 @@ mod tests {
         assert_eq!(ret1, HTTP_OK);
 
         for i in 0..MAX_RECORDS {
-            let ret = post(&path, format!("key{}", i).as_str(), format!("value{}", i).as_str());
+            let ret = post(&path, "mypass", format!("key{}", i).as_str(), format!("value{}", i).as_str());
             assert_eq!(ret, HTTP_OK);
         }
 
-        let ret = post(&path, "key_more", "value_more");
+        let ret = post(&path, "mypass", "key_more", "value_more");
         assert_eq!(ret, HTTP_INSUFFICIENT_STORAGE);
 
         let ret = delete(&path, "key3");
         assert_eq!(ret, HTTP_OK);
 
-        let ret = post(&path, "key_more", "value_more");
+        let ret = post(&path, "mypass", "key_more", "value_more");
         assert_eq!(ret, HTTP_OK);
 
         fs::remove_file(&path).ok();
@@ -494,7 +494,7 @@ mod tests {
         let ret1 = init(&path, "mypass");
         assert_eq!(ret1, HTTP_OK);
 
-        let ret = post(&path, "yahoo.com", "u: abcd p: 1234");
+        let ret = post(&path, "mypass", "yahoo.com", "u: abcd p: 1234");
         assert_eq!(ret, HTTP_OK);
 
         let ret = put(&path, "yahoo2.com", "xyz");
