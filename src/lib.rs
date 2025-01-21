@@ -283,7 +283,7 @@ pub fn post(path : &str, _password : &str, tag : &str, value : &str) -> u32 {
 
 }
 
-pub fn delete(path : &str, tag : &str) -> u32 {
+pub fn delete(path : &str, _passowrd : &str, tag : &str) -> u32 {
     let mut md;
     match validate_path_and_get_md(path) {
         Ok(m) => md = m,
@@ -427,13 +427,13 @@ mod tests {
         let ret = post(&path, "mypass", "yahoo.com", "u: abcd p: 1234");
         assert_eq!(ret, HTTP_OK);
 
-        let ret = delete(&path, "yahoo.com1");
+        let ret = delete(&path, "mypass",  "yahoo.com1");
         assert_eq!(ret, HTTP_NOT_FOUND);
 
         let ret = get(&path, "yahoo.com");
         assert!(ret.is_ok_and(|v| v == "u: abcd p: 1234"));
 
-        let ret = delete(&path, "yahoo.com");
+        let ret = delete(&path, "mypass", "yahoo.com");
         assert_eq!(ret, HTTP_OK);
 
         let ret = get(&path, "yahoo.com");
@@ -477,7 +477,7 @@ mod tests {
         let ret = post(&path, "mypass", "key_more", "value_more");
         assert_eq!(ret, HTTP_INSUFFICIENT_STORAGE);
 
-        let ret = delete(&path, "key3");
+        let ret = delete(&path, "mypass", "key3");
         assert_eq!(ret, HTTP_OK);
 
         let ret = post(&path, "mypass", "key_more", "value_more");
