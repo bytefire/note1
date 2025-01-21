@@ -185,7 +185,8 @@ fn validate_path_and_get_md(path : &str) -> Result<Metadata, u32> {
             if exists {
                 return Ok(Metadata::read_from_file(path));
             } else {
-                eprintln!("File {} doesn't exist!", path.to_str().unwrap());
+                eprintln!("[!] File {} doesn't exist. Please run `note1 init`
+                            command to initialize file", path.to_str().unwrap());
                 return Err(HTTP_NOT_FOUND);
             }
         },
@@ -224,20 +225,9 @@ pub fn post(path : &str, tag : &str, value : &str) -> u32 {
     if ret != HTTP_OK { return ret; }
 
     let mut md;
-    let path = Path::new(path);
-    match path.try_exists() {
-        Ok(exists) => {
-            md = if exists {
-                Metadata::read_from_file(path)
-            } else {
-                // TODO: remove this line and replace the whole "match" with validate_path_and_get_md()
-                Metadata::new(path.to_str().unwrap())
-            }
-        },
-        Err(e) => {
-            eprintln!("Failed to open or create the backing file {}: {}", path.display(), e);
-            return HTTP_INTERNAL_SERVER_ERROR;
-        }
+    match validate_path_and_get_md(path) {
+        Ok(m) => md = m,
+        Err(e) => return e,
     }
 
     // TODO: check for number of available records and if not available then increase max_records.
@@ -374,6 +364,7 @@ mod tests {
         let path = Alphanumeric.sample_string(&mut rand::thread_rng(), 12);
         assert!(!fs::exists(&path).unwrap());
 
+        init(&path, "mypass");
         post(&path, "yahoo.com", "u: abcd p: 1234");
 
         let md = Metadata::read_from_file(Path::new(&path));
@@ -391,6 +382,9 @@ mod tests {
     fn test_duplicate_records() {
         let path = Alphanumeric.sample_string(&mut rand::thread_rng(), 12);
         assert!(!fs::exists(&path).unwrap());
+
+        let ret1 = init(&path, "mypass");
+        assert_eq!(ret1, HTTP_OK);
 
         let ret1 = post(&path, "yahoo.com", "u: abcd p: 1234");
         assert_eq!(ret1, HTTP_OK);
@@ -427,6 +421,9 @@ mod tests {
         let path = Alphanumeric.sample_string(&mut rand::thread_rng(), 12);
         assert!(!fs::exists(&path).unwrap());
 
+        let ret1 = init(&path, "mypass");
+        assert_eq!(ret1, HTTP_OK);
+
         let ret = post(&path, "yahoo.com", "u: abcd p: 1234");
         assert_eq!(ret, HTTP_OK);
 
@@ -451,6 +448,9 @@ mod tests {
         let path = Alphanumeric.sample_string(&mut rand::thread_rng(), 12);
         assert!(!fs::exists(&path).unwrap());
 
+        let ret1 = init(&path, "mypass");
+        assert_eq!(ret1, HTTP_OK);
+
         let ret = post(&path, "yahoo.com", "u: abcd p: 1234");
         assert_eq!(ret, HTTP_OK);
 
@@ -465,6 +465,9 @@ mod tests {
     fn test_max_records() {
         let path = Alphanumeric.sample_string(&mut rand::thread_rng(), 12);
         assert!(!fs::exists(&path).unwrap());
+
+        let ret1 = init(&path, "mypass");
+        assert_eq!(ret1, HTTP_OK);
 
         for i in 0..MAX_RECORDS {
             let ret = post(&path, format!("key{}", i).as_str(), format!("value{}", i).as_str());
@@ -487,6 +490,9 @@ mod tests {
     fn test_put() {
         let path = Alphanumeric.sample_string(&mut rand::thread_rng(), 12);
         assert!(!fs::exists(&path).unwrap());
+
+        let ret1 = init(&path, "mypass");
+        assert_eq!(ret1, HTTP_OK);
 
         let ret = post(&path, "yahoo.com", "u: abcd p: 1234");
         assert_eq!(ret, HTTP_OK);
