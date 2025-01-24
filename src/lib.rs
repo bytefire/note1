@@ -220,6 +220,23 @@ pub fn get(path : &str, tag : &str) -> Result<String, u32> {
     }
 }
 
+pub fn list_tags(path : &str) -> Result<Vec<String>, u32> {
+    let md;
+    let mut tag_strings : Vec<String> = Vec::new();
+
+    match validate_path_and_get_md(path) {
+        Ok(m) => md = m,
+        Err(e) => return Err(e),
+    }
+
+    md.tags.iter().for_each(|t| {
+        if !t.is_empty() {
+            tag_strings.push(String::from(cstring_to_str(&t.tag)));
+        }});
+
+    Ok(tag_strings)
+}
+
 pub fn post(path : &str, _password : &str, tag : &str, value : &str) -> u32 {
     let ret = validate_tag_and_value(tag, value);
     if ret != HTTP_OK { return ret; }
@@ -509,4 +526,6 @@ mod tests {
 
         fs::remove_file(&path).ok();
     }
+
+    // TODO: add test for list_tags()
 }

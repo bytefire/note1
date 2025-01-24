@@ -2,7 +2,7 @@ use std::path::Path;
 
 use clap::{Parser, Subcommand};
 
-use note1::{delete, get, init, post, put};
+use note1::{delete, get, init, list_tags, post, put};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -66,7 +66,10 @@ fn main() {
 
     match cli.cmd {
         Commands::Init => prep_init(&password),
-        Commands::List => println!("listing..."),
+        Commands::List => match list_tags("./note1.file") {
+            Ok(lst) => lst.iter().for_each(|t| println!("{t}")),
+            Err(e) => println!("HTTP status code: {e}"),
+        },
         Commands::Get {tag} => match get("./note1.file", &tag) {
                 Ok(v) => println!("tag: {}\nvalue: {}", tag, &v),
                 Err(e) => println!("HTTP status code: {}", e),
