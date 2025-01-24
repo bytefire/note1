@@ -21,20 +21,26 @@ enum Commands {
     List,
     /// Get value associated with the provided <tag>.
     Get {
+        /// The tag to get value for
         tag : String,
     },
     /// Add a new tag and value
     Add {
+        /// New tag. If it already exists, use update command instead
         tag : String,
+        /// New tag's value
         value : String,
     },
     /// Edit an existing tag's value
     Update {
+        /// Existing tag whose value you want to update
         tag : String,
+        /// The new value
         value : String,
     },
     /// Delete an existing tag and its value
     Delete {
+        /// Existing tag to delete along with its value
         tag : String,
     },
 }
