@@ -11,7 +11,10 @@ mod crypto;
 // and ecrypted using the same key. each value is encrypted using a different
 // key. here is the overall format of the file:
 //
-// first 4 bytes: max number of records supported by this file
+// first `CryptoHelper::SALT_LENGTH` bytes: salt for generating KEK
+// next `CryptoHelper::SALT_LENGTH` bytes: nonce to use with KEK to decrypt FEK
+// next `CryptoHelper::KEY_LENGTH + CryptoHelper::AUTH_TAG_LENGTH` bytes: encrypted FEK
+// next 4 bytes: max number of records supported by this file
 // next 4 bytes: total number of records currently in this file
 // next max_records x 256 bytes: tags
 //      each tag = 248 bytes of ascii text + 8 bytes reserved (currently just
@@ -63,8 +66,10 @@ struct Metadata {
     fname : String,
     // salt used to generate KEK
     salt : [u8; CryptoHelper::SALT_LENGTH],
+    // nonce to use with KEK for decrypting FEK
+    nonce : [u8; CryptoHelper::NONCE_LENGTH],
     // encrypted file encryption key (FEK)
-    encr_fek : [u8; CryptoHelper::KEY_LENGTH],
+    encr_fek : [u8; crypto::encr_buf_len!(CryptoHelper::KEY_LENGTH)],
     max_records : u32,
     record_count : u32,
     tags : Vec<TagRec>,
@@ -76,7 +81,8 @@ impl Metadata {
         let mut md = Metadata {
             fname : String::from(filename),
             salt : [0u8; CryptoHelper::SALT_LENGTH],
-            encr_fek : [0u8; CryptoHelper::KEY_LENGTH],
+            nonce : [0u8; CryptoHelper::NONCE_LENGTH],
+            encr_fek : [0u8; crypto::encr_buf_len!(CryptoHelper::KEY_LENGTH)],
             max_records : MAX_RECORDS,
             record_count : 0,
             tags : Vec::with_capacity(MAX_RECORDS as usize),
@@ -92,6 +98,21 @@ impl Metadata {
         md
     }
 
+    fn set_salt(&mut self, salt_in : &[u8]) {
+        assert_eq!(salt_in.len(), CryptoHelper::SALT_LENGTH);
+        self.salt.copy_from_slice(salt_in);
+    }
+
+    fn set_nonce(&mut self, nonce_in : &[u8]) {
+        assert_eq!(nonce_in.len(), CryptoHelper::NONCE_LENGTH);
+        self.nonce.copy_from_slice(nonce_in);
+    }
+
+    fn set_encr_fek(&mut self, encr_fek_in : &[u8]) {
+        assert_eq!(encr_fek_in.len(), crypto::encr_buf_len!(CryptoHelper::KEY_LENGTH));
+        self.encr_fek.copy_from_slice(encr_fek_in);
+    }
+
     fn write_to_file(&mut self) {
         // overwrite the file every time. if there is a need, we can consider
         // editing it instead of overwriting it.
@@ -100,6 +121,7 @@ impl Metadata {
 
         // TODO: transform {max_records, record_count, tags}
         f.write_all(&self.salt).unwrap();
+        f.write_all(&self.nonce).unwrap();
         f.write_all(&self.encr_fek).unwrap();
         f.write_u32::<LittleEndian>(self.max_records).unwrap();
         f.write_u32::<LittleEndian>(self.record_count).unwrap();
@@ -123,6 +145,7 @@ impl Metadata {
         let mut md = Metadata::new(path.to_str().unwrap());
         let mut f = File::open(path).unwrap();
         f.read_exact(&mut md.salt).unwrap();
+        f.read_exact(&mut md.nonce).unwrap();
         f.read_exact(&mut md.encr_fek).unwrap();
         md.max_records = f.read_u32::<LittleEndian>().unwrap();
         md.record_count = f.read_u32::<LittleEndian>().unwrap();
@@ -363,17 +386,25 @@ pub fn put(path : &str, _password : &str, tag : &str, new_value : &str) -> u32 {
     HTTP_OK
 }
 
-//fn generate_key(password : &[u8], salt : &[u8]) -> Vec<u8> {
-//
-//}
-
-pub fn init(path : &str, _password : &str) -> u32 {
+pub fn init(path : &str, password : &str) -> u32 {
     let path = Path::new(path);
     let ret = path.try_exists();
     assert!(ret.is_ok());
     assert!(ret.unwrap() == false);
 
     let mut md = Metadata::new(path.to_str().unwrap());
+
+    let salt = CryptoHelper::generate_salt();
+    md.set_salt(&salt);
+
+    let kek = CryptoHelper::generate_key_using_salt(password, &salt);
+    let fek : [u8; CryptoHelper::KEY_LENGTH] = CryptoHelper::generate_key(password);
+    let (encr_fek, nonce) = CryptoHelper::encrypt(&fek, &kek);
+    md.set_nonce(&nonce);
+    md.set_encr_fek(&encr_fek);
+    // if tag is empty, we don't encrypt value. since all tags are empty at init time,
+    //  we won't encrypt any value. also no point in setting value encryption key.
+    // md.set_encr_tags(CryptoHelper::encrypt(md.tags_as_byte_array(), &fek));
 
     // TODO:
     //      1. generate key from password using Argon2id
@@ -390,6 +421,7 @@ pub fn init(path : &str, _password : &str) -> u32 {
 mod tests {
     use std::fs;
     use argon2::{password_hash::SaltString, Argon2, ParamsBuilder};
+    use chacha20poly1305::{ChaCha20Poly1305, KeySizeUser};
     use rand::{distributions::{Alphanumeric, DistString}, rngs::OsRng};
 
     use crate::crypto::CryptoHelper;
@@ -549,7 +581,16 @@ mod tests {
 
     // TODO: add test for list_tags()
 
+    #[test]
+    fn test_chacha20poly1305() {
+        // TODO: add test for chacha20poly1305 encryption:
+        //      - check input vs output size (padding should not exist since it's a stream cipher but tag length will be appended)
+        //      - check AAD / auth tag
+        println!("ChaCha20Poly1305 key size: {}", ChaCha20Poly1305::key_size());
+    }
+
     /*
+    // TODO: add test for argon2
     #[test]
     fn test_argon2() {
         let password = b"password";

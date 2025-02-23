@@ -1,6 +1,10 @@
 A very hacky fun project to play around with.
 
-It has a CLI which allows users to store, view and edit key-value pairs. The
+DO NOT USE FOR REAL LIFE PURPESES. It's a fun project, parts of which were
+written at extremely high speeds due to shortage of time. As a result, it
+may contain security or other problems. Use it at your own risk.
+
+note1 has a CLI which allows users to store, view and edit key-value pairs. The
 CLI wraps lib.rs which exposes HTTP verbs get, post, put and delete to operate
 on the key-value pairs.
 
@@ -8,9 +12,6 @@ Key-value pairs can undergo a transform operation before being saved to file
 and after being loaded from file. Depending upon transform, there can be
 different applications. E.g. if transform is encryption then note1 can be used
 as a password store.
-
-DO NOT USE FOR REAL LIFE PURPESES. It's a fun project and may contain security
-or other problems. Use it at your own risk.
 
 As a next step we would want a more organized and extensible header format.
 Perhaps something like the following:
