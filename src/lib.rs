@@ -16,10 +16,13 @@ mod crypto;
 // next `CryptoHelper::KEY_LENGTH + CryptoHelper::AUTH_TAG_LENGTH` bytes: encrypted FEK
 // next 4 bytes: max number of records supported by this file
 // next 4 bytes: total number of records currently in this file
-// next max_records x 256 bytes: tags
-//      each tag = 248 bytes of ascii text + 8 bytes reserved (currently just
-//          LSB (boolean) is used as used (1) / empty (0) flag)
-// next max_records x 256 bytes: values
+// next max_records x `TAG_REC_LENGTH` bytes: tags
+//      each tag = `TAG_LENGTH` bytes of ascii text +
+//                  `TAG_FLAGS_LENGTH` bytes reserved (currently just LSB (boolean) is used
+//                      as used (1) / empty (0) flag) +
+//                  `CryptoHelper::KEY_LENGTH` for symmetric key of corresponding value +
+//                  `CryptoHelper::NONCE_LENGTH` for nonce to go with symmetric key above
+// next max_records x `ENCR_VAL_LENGTH`` bytes: values
 //      each value corresponds, in relative order, to the tag in the list of
 //          tags above. e.g. the value at values[i] corresponds to the tag at
 //          tags[i].
@@ -28,6 +31,11 @@ mod crypto;
 const MAX_RECORDS : u32 = 100;
 const VAL_LENGTH : usize = 256;
 const ENCR_VAL_LENGTH : usize = encr_buf_len!(VAL_LENGTH);
+const TAG_LENGTH : usize = 248;
+const TAG_FLAGS_LENGTH : usize = 8;
+const TAG_REC_LENGTH : usize = TAG_LENGTH + TAG_FLAGS_LENGTH + CryptoHelper::KEY_LENGTH
+                + CryptoHelper::NONCE_LENGTH;
+
 
 // HTTP codes that we return
 // TODO: find a way to group these codes under a type. something like C++ enum.
@@ -42,11 +50,22 @@ pub const HTTP_INTERNAL_SERVER_ERROR : u32 = 500;
 pub const HTTP_INSUFFICIENT_STORAGE : u32 = 507;
 
 struct TagRec {
-    tag : [u8;248],
+    tag : [u8;TAG_LENGTH],
     flags : u64,
+    val_key : [u8; CryptoHelper::KEY_LENGTH],
+    val_nonce : [u8; CryptoHelper::NONCE_LENGTH],
 }
 
 impl TagRec {
+    fn new() -> Self {
+        TagRec {
+            tag: [0; TAG_LENGTH],
+            flags: 0x0,
+            val_key : [0u8; CryptoHelper::KEY_LENGTH],
+            val_nonce : [0u8; CryptoHelper::NONCE_LENGTH],
+        }
+    }
+
     fn is_empty(&self) -> bool {
         return if self.flags & 0x1 == 0 {
             true
@@ -93,7 +112,7 @@ impl Metadata {
 
         // inflate the vectors
         for _i in 0..md.max_records {
-            md.tags.push(TagRec { tag: [0; 248], flags: 0x0 });
+            md.tags.push(TagRec::new());
             md.values.push([0; ENCR_VAL_LENGTH]);
         }
 
@@ -127,9 +146,13 @@ impl Metadata {
         f.write_all(&self.encr_fek).unwrap();
         f.write_u32::<LittleEndian>(self.max_records).unwrap();
         f.write_u32::<LittleEndian>(self.record_count).unwrap();
+        
         for tag in &self.tags {
+            // TODO: following lines should be part of TagRec's method
             f.write_all(&tag.tag).unwrap();
             f.write_u64::<LittleEndian>(tag.flags).unwrap();
+            f.write_all(&tag.val_key).unwrap();
+            f.write_all(&tag.val_nonce).unwrap();
         }
 
         // values must be transformed separately when they are read and written to
@@ -158,6 +181,8 @@ impl Metadata {
         for i in 0..md.max_records as usize {
             f.read_exact(&mut md.tags[i].tag).unwrap();
             md.tags[i].flags = f.read_u64::<LittleEndian>().unwrap();
+            f.read_exact(&mut md.tags[i].val_key).unwrap();
+            f.read_exact(&mut md.tags[i].val_nonce).unwrap();
         }
 
         // read values
@@ -207,7 +232,7 @@ fn validate_tag_and_value(tag : &str, value : &str) -> u32 {
         return HTTP_BAD_REQUEST;
     }
 
-    if tag.len() > 248 || value.len() > 256 {
+    if tag.len() > TAG_LENGTH || value.len() > VAL_LENGTH {
         eprintln!("<TAG> must not be more than 248 <VALUE> must not be more than 256 ASCII characters long");
         return HTTP_BAD_REQUEST;
     }
@@ -315,10 +340,7 @@ pub fn post(path : &str, _password : &str, tag : &str, value : &str) -> u32 {
     }
 
     // here means the tag doesn't exist so let's add it at index `first_empty_index`
-    let mut tr = TagRec {
-        tag : [0; 248],
-        flags : 0x0,
-    };
+    let mut tr = TagRec::new();
 
     tr.set_is_empty(false);
 
@@ -480,7 +502,7 @@ mod tests {
         for (i, tag) in (&md.tags[1..]).iter().enumerate() {
             assert_eq!(tag.is_empty(), true);
             assert_eq!(tag.flags, 0);
-            assert_eq!(tag.tag, [0; 248]);
+            assert_eq!(tag.tag, [0; TAG_LENGTH]);
             assert_eq!(md.values[i + 1], [0; ENCR_VAL_LENGTH]);
         }
 
