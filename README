@@ -8,3 +8,34 @@ Key-value pairs can undergo a transform operation before being saved to file
 and after being loaded from file. Depending upon transform, there can be
 different applications. E.g. if transform is encryption then note1 can be used
 as a password store.
+
+DO NOT USE FOR REAL LIFE PURPESES. It's a fun project and may contain security
+or other problems. Use it at your own risk.
+
+As a next step we would want a more organized and extensible header format.
+Perhaps something like the following:
+
++------------------------------------------------------------------------+
+| MAJOR_VERSION_NUMBER (4 bytes)  | MINOR_VERSION_NUMBER (4 bytes)       |
++------------------------------------------------------------------------+
+| HEADER_LEN (4 bytes)            |                                      |
++------------------------------------------------------------------------+
+| SALT (16 bytes)                 |                                      |
++------------------------------------------------------------------------+
+| ENCR-KEK (32 bytes)             |                                      |
++------------------------------------------------------------------------+
+| MAX_RECORDS (4 bytes)           | RECORD_COUNT (4 bytes)               |
++------------------------------------------------------------------------+
+| RESERVED (HEADER_LEN - 68 bytes)                                       |
++------------------------------------------------------------------------+
+
+We can start with 4096 bytes HEADER_LEN. Such a header will be followed by
+all the tags which will be encrypted using the key wrapped inside ENCR-KEK.
+Each tag will contain the key for value corresponding to that key. So each
+value is separately encrypted. This will help with key rotation.
+
+Each value will be encrypted using AEAD and each value's AAD should contain
+hash of the corresponding tag. That way someone can't swap values belonging to
+different tags.
+
+For now, we stick with bare minimum :)
