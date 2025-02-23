@@ -1,6 +1,9 @@
 use std::{fs::File, io::{Read, Write}, path::Path, usize};
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use crypto::CryptoHelper;
+
+mod crypto;
 
 // note1.file format is simple but open to evolve as and when need arises.
 // the format is based on concept of "record". a record is a (tag, value) pair.
@@ -58,6 +61,10 @@ impl TagRec {
 
 struct Metadata {
     fname : String,
+    // salt used to generate KEK
+    salt : [u8; CryptoHelper::SALT_LENGTH],
+    // encrypted file encryption key (FEK)
+    encr_fek : [u8; CryptoHelper::KEY_LENGTH],
     max_records : u32,
     record_count : u32,
     tags : Vec<TagRec>,
@@ -68,6 +75,8 @@ impl Metadata {
     fn new(filename : &str) -> Self {
         let mut md = Metadata {
             fname : String::from(filename),
+            salt : [0u8; CryptoHelper::SALT_LENGTH],
+            encr_fek : [0u8; CryptoHelper::KEY_LENGTH],
             max_records : MAX_RECORDS,
             record_count : 0,
             tags : Vec::with_capacity(MAX_RECORDS as usize),
@@ -90,6 +99,8 @@ impl Metadata {
         let mut f = File::create(&self.fname).unwrap();
 
         // TODO: transform {max_records, record_count, tags}
+        f.write_all(&self.salt).unwrap();
+        f.write_all(&self.encr_fek).unwrap();
         f.write_u32::<LittleEndian>(self.max_records).unwrap();
         f.write_u32::<LittleEndian>(self.record_count).unwrap();
         for tag in &self.tags {
@@ -111,6 +122,8 @@ impl Metadata {
     fn read_from_file(path : &Path) -> Self {
         let mut md = Metadata::new(path.to_str().unwrap());
         let mut f = File::open(path).unwrap();
+        f.read_exact(&mut md.salt).unwrap();
+        f.read_exact(&mut md.encr_fek).unwrap();
         md.max_records = f.read_u32::<LittleEndian>().unwrap();
         md.record_count = f.read_u32::<LittleEndian>().unwrap();
 
@@ -350,6 +363,10 @@ pub fn put(path : &str, _password : &str, tag : &str, new_value : &str) -> u32 {
     HTTP_OK
 }
 
+//fn generate_key(password : &[u8], salt : &[u8]) -> Vec<u8> {
+//
+//}
+
 pub fn init(path : &str, _password : &str) -> u32 {
     let path = Path::new(path);
     let ret = path.try_exists();
@@ -372,7 +389,10 @@ pub fn init(path : &str, _password : &str) -> u32 {
 #[cfg(test)]
 mod tests {
     use std::fs;
-    use rand::distributions::{Alphanumeric, DistString};
+    use argon2::{password_hash::SaltString, Argon2, ParamsBuilder};
+    use rand::{distributions::{Alphanumeric, DistString}, rngs::OsRng};
+
+    use crate::crypto::CryptoHelper;
 
     use super::*;
 
@@ -528,4 +548,18 @@ mod tests {
     }
 
     // TODO: add test for list_tags()
+
+    /*
+    #[test]
+    fn test_argon2() {
+        let password = b"password";
+        // TODO: check if salt requires an RNG with better cryptographic properties
+        let salt = SaltString::generate(&mut OsRng);
+        println!("Salt length: {}\nSalt generated from argon2: {}", salt.len(), salt);
+        let mut key = [0u8; 32];
+        let params = CryptoHelper::generate_argon2_params();
+        println!("Value from cryptohelper: {}", params);
+        //let argon = Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x10,)
+    }
+    */
 }

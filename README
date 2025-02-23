@@ -22,7 +22,7 @@ Perhaps something like the following:
 +------------------------------------------------------------------------+
 | SALT (16 bytes)                 |                                      |
 +------------------------------------------------------------------------+
-| ENCR-KEK (32 bytes)             |                                      |
+| ENCR-FEK (32 bytes)             |                                      |
 +------------------------------------------------------------------------+
 | MAX_RECORDS (4 bytes)           | RECORD_COUNT (4 bytes)               |
 +------------------------------------------------------------------------+
@@ -30,9 +30,10 @@ Perhaps something like the following:
 +------------------------------------------------------------------------+
 
 We can start with 4096 bytes HEADER_LEN. Such a header will be followed by
-all the tags which will be encrypted using the key wrapped inside ENCR-KEK.
-Each tag will contain the key for value corresponding to that key. So each
-value is separately encrypted. This will help with key rotation.
+all the tags which will be encrypted using the key wrapped inside ENCR-FEK,
+i.e. encrypted file encryption key. Each tag will contain the key for value
+corresponding to that key. So each value is separately encrypted. This will
+help with key rotation.
 
 Each value will be encrypted using AEAD and each value's AAD should contain
 hash of the corresponding tag. That way someone can't swap values belonging to
