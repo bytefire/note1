@@ -1,5 +1,5 @@
 use argon2::{password_hash::{Salt, SaltString}, Argon2};
-use chacha20poly1305::{AeadCore, ChaCha20Poly1305, KeyInit};
+use chacha20poly1305::{AeadCore, ChaCha20Poly1305, KeyInit, Nonce};
 use chacha20poly1305::aead::Aead;
 use rand::rngs::OsRng;
 
@@ -52,5 +52,14 @@ impl CryptoHelper {
         let ciphertext = cipher.encrypt(&nonce, plaintext).expect("[!] Failed to encrypt");
 
         (ciphertext, nonce.as_slice().to_owned())
+    }
+
+    pub fn decrypt(ciphertext : &[u8], key : &[u8], nonce : &[u8]) -> Vec<u8> {
+        let cipher = ChaCha20Poly1305::new_from_slice(key)
+            .expect("[!] Failed to create ChaCha20Poly1305 instance from key passed as u8 slice");
+
+        let plaintext = cipher.decrypt(&Nonce::clone_from_slice(nonce), ciphertext).unwrap();
+
+        plaintext
     }
 }

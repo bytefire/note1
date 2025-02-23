@@ -66,11 +66,11 @@ fn main() {
 
     match cli.cmd {
         Commands::Init => prep_init(&password),
-        Commands::List => match list_tags("./note1.file") {
+        Commands::List => match list_tags("./note1.file", &password) {
             Ok(lst) => lst.iter().for_each(|t| println!("{t}")),
             Err(e) => println!("HTTP status code: {e}"),
         },
-        Commands::Get {tag} => match get("./note1.file", &tag) {
+        Commands::Get {tag} => match get("./note1.file", &password, &tag) {
                 Ok(v) => println!("tag: {}\nvalue: {}", tag, &v),
                 Err(e) => println!("HTTP status code: {}", e),
             },
