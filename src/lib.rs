@@ -93,6 +93,7 @@ struct Metadata {
     encr_fek : [u8; crypto::encr_buf_len!(CryptoHelper::KEY_LENGTH)],
     max_records : u32,
     record_count : u32,
+    encr_tags : [u8; encr_buf_len!(TAG_REC_LENGTH)],
     tags : Vec<TagRec>,
     values : Vec<[u8;ENCR_VAL_LENGTH]>,
 }
@@ -106,6 +107,7 @@ impl Metadata {
             encr_fek : [0u8; crypto::encr_buf_len!(CryptoHelper::KEY_LENGTH)],
             max_records : MAX_RECORDS,
             record_count : 0,
+            encr_tags : [0u8; encr_buf_len!(TAG_REC_LENGTH)],
             tags : Vec::with_capacity(MAX_RECORDS as usize),
             values : Vec::with_capacity(MAX_RECORDS as usize),
         };
@@ -134,6 +136,11 @@ impl Metadata {
         self.encr_fek.copy_from_slice(encr_fek_in);
     }
 
+    fn set_encr_tags(&mut self, encr_tags_in : &[u8]) {
+        assert_eq!(encr_tags_in.len(), encr_buf_len!(TAG_REC_LENGTH));
+        self.encr_tags.copy_from_slice(encr_tags_in);
+    }
+
     fn write_to_file(&mut self) {
         // overwrite the file every time. if there is a need, we can consider
         // editing it instead of overwriting it.
@@ -146,7 +153,9 @@ impl Metadata {
         f.write_all(&self.encr_fek).unwrap();
         f.write_u32::<LittleEndian>(self.max_records).unwrap();
         f.write_u32::<LittleEndian>(self.record_count).unwrap();
+        f.write_all(&self.encr_tags).unwrap();
         
+        // TODO: remove this loop once we have encr_tags working. we will only write encrypted tags to file.
         for tag in &self.tags {
             // TODO: following lines should be part of TagRec's method
             f.write_all(&tag.tag).unwrap();
@@ -174,10 +183,9 @@ impl Metadata {
         f.read_exact(&mut md.encr_fek).unwrap();
         md.max_records = f.read_u32::<LittleEndian>().unwrap();
         md.record_count = f.read_u32::<LittleEndian>().unwrap();
+        f.read_exact(&mut md.encr_tags).unwrap();
 
-        // read tags. today we read all tags and values, including the empty
-        // ones. an optimization could be to read only the used tags and
-        // values. with 100 max records, it doesn't matter much at the moment.
+        // TODO: obtain the following by decrypting md.encr_tags
         for i in 0..md.max_records as usize {
             f.read_exact(&mut md.tags[i].tag).unwrap();
             md.tags[i].flags = f.read_u64::<LittleEndian>().unwrap();
