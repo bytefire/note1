@@ -44,6 +44,7 @@ const TAG_LENGTH : usize = 248;
 const TAG_FLAGS_LENGTH : usize = 8;
 const TAG_REC_LENGTH : usize = TAG_LENGTH + TAG_FLAGS_LENGTH + CryptoHelper::KEY_LENGTH
                 + CryptoHelper::NONCE_LENGTH;
+const MAX_TAGS_REC_LENGTH : usize = MAX_RECORDS as usize * TAG_REC_LENGTH;
 
 
 // HTTP codes that we return
@@ -90,6 +91,16 @@ impl TagRec {
             self.flags |= 0x1;
         }
     }
+
+    fn as_bytes(&self) -> Vec<u8> {
+        let mut v = Vec::new();
+        v.copy_from_slice(&self.tag);
+        v.copy_from_slice(&self.flags.to_le_bytes());
+        v.copy_from_slice(&self.val_key);
+        v.copy_from_slice(&self.val_nonce);
+
+        v
+    }
 }
 
 struct Metadata {
@@ -103,7 +114,7 @@ struct Metadata {
     max_records : u32,
     record_count : u32,
     fek_nonce : [u8; CryptoHelper::NONCE_LENGTH],
-    encr_tags : [u8; encr_buf_len!(TAG_REC_LENGTH)],
+    encr_tags : [u8; encr_buf_len!(MAX_TAGS_REC_LENGTH)],
     tags : Vec<TagRec>,
     values : Vec<[u8;ENCR_VAL_LENGTH]>,
 }
@@ -118,7 +129,7 @@ impl Metadata {
             max_records : MAX_RECORDS,
             record_count : 0,
             fek_nonce : [0u8; CryptoHelper::NONCE_LENGTH],
-            encr_tags : [0u8; encr_buf_len!(TAG_REC_LENGTH)],
+            encr_tags : [0u8; encr_buf_len!(MAX_TAGS_REC_LENGTH)],
             tags : Vec::with_capacity(MAX_RECORDS as usize),
             values : Vec::with_capacity(MAX_RECORDS as usize),
         };
@@ -153,8 +164,19 @@ impl Metadata {
     }
 
     fn set_encr_tags(&mut self, encr_tags_in : &[u8]) {
-        assert_eq!(encr_tags_in.len(), encr_buf_len!(TAG_REC_LENGTH));
+        assert_eq!(encr_tags_in.len(), encr_buf_len!(MAX_TAGS_REC_LENGTH));
         self.encr_tags.copy_from_slice(encr_tags_in);
+    }
+
+    fn tags_as_byte_array(&self) -> Vec<u8> {
+        let mut v : Vec<u8> = Vec::new();
+
+        // TODO(optimize): this is copying twice, once in tag.as_bytes() and again here.
+        for t in &self.tags {
+            v.copy_from_slice(&t.as_bytes());
+        }
+
+        v
     }
 
     fn write_to_file(&mut self) {
