@@ -1,7 +1,7 @@
 use std::{fs::File, io::{Read, Write}, path::Path, usize};
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use crypto::CryptoHelper;
+use crypto::{encr_buf_len, CryptoHelper};
 
 mod crypto;
 
@@ -26,6 +26,8 @@ mod crypto;
 //      each value is encrypted using a different key.
 
 const MAX_RECORDS : u32 = 100;
+const VAL_LENGTH : usize = 256;
+const ENCR_VAL_LENGTH : usize = encr_buf_len!(VAL_LENGTH);
 
 // HTTP codes that we return
 // TODO: find a way to group these codes under a type. something like C++ enum.
@@ -73,7 +75,7 @@ struct Metadata {
     max_records : u32,
     record_count : u32,
     tags : Vec<TagRec>,
-    values : Vec<[u8;256]>,
+    values : Vec<[u8;ENCR_VAL_LENGTH]>,
 }
 
 impl Metadata {
@@ -92,7 +94,7 @@ impl Metadata {
         // inflate the vectors
         for _i in 0..md.max_records {
             md.tags.push(TagRec { tag: [0; 248], flags: 0x0 });
-            md.values.push([0; 256]);
+            md.values.push([0; ENCR_VAL_LENGTH]);
         }
 
         md
@@ -479,7 +481,7 @@ mod tests {
             assert_eq!(tag.is_empty(), true);
             assert_eq!(tag.flags, 0);
             assert_eq!(tag.tag, [0; 248]);
-            assert_eq!(md.values[i + 1], [0; 256]);
+            assert_eq!(md.values[i + 1], [0; ENCR_VAL_LENGTH]);
         }
 
         fs::remove_file(&path).ok();

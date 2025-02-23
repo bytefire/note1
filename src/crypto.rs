@@ -2,7 +2,6 @@ use argon2::{password_hash::{Salt, SaltString}, Argon2};
 use chacha20poly1305::{AeadCore, ChaCha20Poly1305, KeyInit};
 use chacha20poly1305::aead::Aead;
 use rand::rngs::OsRng;
-pub struct CryptoHelper;
 
 macro_rules! encr_buf_len {
     ($plaintext_length:expr) => {
@@ -11,6 +10,8 @@ macro_rules! encr_buf_len {
 }
 
 pub(crate) use encr_buf_len;
+
+pub struct CryptoHelper;
 
 impl CryptoHelper {
     pub const SALT_LENGTH : usize = Salt::RECOMMENDED_LENGTH;
