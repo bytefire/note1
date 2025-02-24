@@ -197,17 +197,17 @@ impl Metadata {
     }
 
     fn write_to_file(&mut self, password : &str) {
-        // overwrite the file every time. if there is a need, we can consider
-        // editing it instead of overwriting it.
-        // TODO: use BufWriter for efficiency and wrap Cursor around BufWriter
-        let mut f = File::create(&self.fname).unwrap();
-
         let tags_ba = self.tags_as_byte_array();
         let fek = self.get_fek(password);
         let (ciphertext, nonce) = CryptoHelper::encrypt(&tags_ba, &fek);
 
         self.set_fek_nonce(&nonce);
         self.set_encr_tags(&ciphertext);
+
+        // overwrite the file every time. if there is a need, we can consider
+        // editing it instead of overwriting it.
+        // TODO: use BufWriter for efficiency and wrap Cursor around BufWriter
+        let mut f = File::create(&self.fname).unwrap();
 
         f.write_all(&self.salt).unwrap();
         f.write_all(&self.kek_nonce).unwrap();
@@ -298,9 +298,13 @@ impl Metadata {
         dest.write_all(new_value).unwrap();
     }
 
-    fn encrypt_value_at_index(&mut self, password : &str, index : usize, value : &[u8]) {
+    fn encrypt_value_at_index(&mut self, password : &str, index : usize, value : &str) {
+        let vbytes = value.as_bytes();
+        assert!(vbytes.len() < VAL_LENGTH);
+        let mut varr = [0u8; VAL_LENGTH];
+        varr[..vbytes.len()].copy_from_slice(vbytes);
         let key = CryptoHelper::generate_key(password);
-        let (ciphertext, nonce) = CryptoHelper::encrypt(value, &key);
+        let (ciphertext, nonce) = CryptoHelper::encrypt(&varr, &key);
         self.tags[index].set_val_key(&key);
         self.tags[index].set_val_nonce(&nonce);
         self.set_value_at_index(index, &ciphertext);
@@ -310,7 +314,6 @@ impl Metadata {
         let decrypted = CryptoHelper::decrypt(
             &self.values[index], &self.tags[index].val_key, &self.tags[index].val_nonce);
 
-        println!("**** DECRYPTED VALUE: {:?}", decrypted);
         cstring_to_str(&decrypted).to_owned()
     }
 }
@@ -438,8 +441,8 @@ pub fn post(path : &str, password : &str, tag : &str, value : &str) -> u32 {
     // when we initialize metadata struct from note1.file, we make sure that
     // all the 100 slots in the tags and values vectors are filled.
     md.tags[first_empty_index] = tr;
-    
-    md.encrypt_value_at_index(password, first_empty_index, value.as_bytes());
+
+    md.encrypt_value_at_index(password, first_empty_index, value);
 
     md.record_count += 1;
 
@@ -492,7 +495,7 @@ pub fn put(path : &str, password : &str, tag : &str, new_value : &str) -> u32 {
         }
     }
 
-    md.encrypt_value_at_index(password, index, new_value.as_bytes());
+    md.encrypt_value_at_index(password, index, new_value);
     md.write_to_file(password);
 
     HTTP_OK
@@ -554,7 +557,6 @@ mod tests {
         assert_eq!(cstring_to_str(&md.tags[0].tag), "yahoo.com");
         assert_eq!(md.tags[0].flags, 0x1);
         assert_eq!(md.decrypt_value_at_index(0), "u: abcd p: 1234");
-        //assert_eq!(cstring_to_str(&md.values[0]), "u: abcd p: 1234");
 
         fs::remove_file(&path).ok();
     }
@@ -581,7 +583,7 @@ mod tests {
         assert_eq!(md.tags[0].is_empty(), false);
         assert_eq!(md.tags[0].flags, 1);
         assert_eq!(cstring_to_str(&md.tags[0].tag), "yahoo.com");
-        assert_eq!(cstring_to_str(&md.values[0]), "u: abcd p: 1234");
+        assert_eq!(md.decrypt_value_at_index(0), "u: abcd p: 1234");
 
         let val = get(&path, "mypass",  "yahoo.com");
         assert!(val.is_ok());
