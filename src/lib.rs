@@ -101,6 +101,16 @@ impl TagRec {
 
         v
     }
+
+    fn set_val_key(&mut self, val_key_in : &[u8]) {
+        assert_eq!(val_key_in.len(), CryptoHelper::KEY_LENGTH);
+        self.val_key.copy_from_slice(val_key_in);
+    }
+
+    fn set_val_nonce(&mut self, val_nonce_in : &[u8]) {
+        assert_eq!(val_nonce_in.len(), CryptoHelper::NONCE_LENGTH);
+        self.val_nonce.copy_from_slice(val_nonce_in);
+    }
 }
 
 struct Metadata {
@@ -283,9 +293,25 @@ impl Metadata {
         self.values[index].fill(0);
     }
 
-    fn set_value_at_index(&mut self, index : usize, new_value : &str) {
+    fn set_value_at_index(&mut self, index : usize, new_value : &[u8]) {
         let mut dest : &mut [u8] = &mut self.values[index];
-        dest.write_all(new_value.as_bytes()).unwrap();
+        dest.write_all(new_value).unwrap();
+    }
+
+    fn encrypt_value_at_index(&mut self, password : &str, index : usize, value : &[u8]) {
+        let key = CryptoHelper::generate_key(password);
+        let (ciphertext, nonce) = CryptoHelper::encrypt(value, &key);
+        self.tags[index].set_val_key(&key);
+        self.tags[index].set_val_nonce(&nonce);
+        self.set_value_at_index(index, &ciphertext);
+    }
+
+    fn decrypt_value_at_index(&self, index: usize) -> String {
+        let decrypted = CryptoHelper::decrypt(
+            &self.values[index], &self.tags[index].val_key, &self.tags[index].val_nonce);
+
+        println!("**** DECRYPTED VALUE: {:?}", decrypted);
+        cstring_to_str(&decrypted).to_owned()
     }
 }
 
@@ -328,11 +354,6 @@ fn validate_path_and_get_md(path : &str, password : &str) -> Result<Metadata, u3
     }
 }
 
-fn transform(mut target : &mut [u8], source : &str) {
-    // TODO: encrypt using ChaCha Poly here
-    target.write_all(source.as_bytes()).unwrap();
-}
-
 pub fn get(path : &str, password : &str, tag : &str) -> Result<String, u32> {
     let md;
 
@@ -343,7 +364,7 @@ pub fn get(path : &str, password : &str, tag : &str) -> Result<String, u32> {
 
     // here means md has been initialized. search for matching tag.
     return match md.index_of_matching_tag(tag) {
-        Some(index) =>  {Ok(String::from(cstring_to_str(&md.values[index]))) },
+        Some(index) =>  { Ok(md.decrypt_value_at_index(index)) },
         None => {
             eprintln!("[-] Failed to find the tag '{}'", tag);
             Err(HTTP_NOT_FOUND)
@@ -417,8 +438,8 @@ pub fn post(path : &str, password : &str, tag : &str, value : &str) -> u32 {
     // when we initialize metadata struct from note1.file, we make sure that
     // all the 100 slots in the tags and values vectors are filled.
     md.tags[first_empty_index] = tr;
-
-    transform(&mut md.values[first_empty_index], value);
+    
+    md.encrypt_value_at_index(password, first_empty_index, value.as_bytes());
 
     md.record_count += 1;
 
@@ -471,8 +492,7 @@ pub fn put(path : &str, password : &str, tag : &str, new_value : &str) -> u32 {
         }
     }
 
-    // TODO: encrypt value with per-record key
-    md.set_value_at_index(index, new_value);
+    md.encrypt_value_at_index(password, index, new_value.as_bytes());
     md.write_to_file(password);
 
     HTTP_OK
@@ -533,7 +553,8 @@ mod tests {
         assert_eq!(md.record_count, 1);
         assert_eq!(cstring_to_str(&md.tags[0].tag), "yahoo.com");
         assert_eq!(md.tags[0].flags, 0x1);
-        assert_eq!(cstring_to_str(&md.values[0]), "u: abcd p: 1234");
+        assert_eq!(md.decrypt_value_at_index(0), "u: abcd p: 1234");
+        //assert_eq!(cstring_to_str(&md.values[0]), "u: abcd p: 1234");
 
         fs::remove_file(&path).ok();
     }
@@ -621,7 +642,7 @@ mod tests {
         fs::remove_file(&path).ok();
     }
 
-    //#[test]
+    //#[test] // this takes more than 60 seconds
     fn test_max_records() {
         let path = Alphanumeric.sample_string(&mut rand::thread_rng(), 12);
         assert!(!fs::exists(&path).unwrap());

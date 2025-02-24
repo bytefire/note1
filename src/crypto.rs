@@ -58,7 +58,8 @@ impl CryptoHelper {
         let cipher = ChaCha20Poly1305::new_from_slice(key)
             .expect("[!] Failed to create ChaCha20Poly1305 instance from key passed as u8 slice");
 
-        let plaintext = cipher.decrypt(&Nonce::clone_from_slice(nonce), ciphertext).unwrap();
+        let plaintext = cipher.decrypt(&Nonce::clone_from_slice(nonce), ciphertext)
+            .expect("[!] Failed to decrypte cipher text");
 
         plaintext
     }
